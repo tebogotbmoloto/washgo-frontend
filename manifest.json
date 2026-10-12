@@ -8,5 +8,19 @@
   "short_name": "CarWashL",
   "start_url": "/",
   "theme_color": "#007bff",
-  "description": "CarWash Locator is a fast, location-aware mobile web app that instantly finds nearby car washes and service options around you using live GPS tracking. Compare distances, ratings, operating hours, and service prices seamlessly while discovering trusted local automotive businesses."
+  "description": "CarWash Locator is a fast, location-aware mobile web app that instantly finds nearby car washes and service options around you using live GPS tracking. Compare distances, ratings, operating hours, and service prices seamlessly while discovering trusted local automotive businesses.",
+  "icons": [
+    {
+      "src": "./icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
 }
