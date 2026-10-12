@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Carwash Locator - Find Nearby Car Washes</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 600px; margin: 40px auto; padding: 20px; background: #f4f7f6; }
+        .card { background: white; padding: 20px; margin-bottom: 15px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        h1 { color: #007bff; }
+        h2 { margin-top: 0; color: #333; }
+        button { background: #007bff; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; font-size: 16px; }
+        button:hover { background: #0056b3; }
+    </style>
+</head>
+<body>
+
+    <h1>Carwash Locator</h1>
+    <p>Find nearby car washes using your live location:</p>
+    <button onclick="fetchCarWashes()">Find Nearby Car Washes</button>
+
+    <div id="results" style="margin-top: 20px;"></div>
+
+    <script>
+        function fetchCarWashes() {
+            const resultsDiv = document.getElementById('results');
+
+            if (!navigator.geolocation) {
+                resultsDiv.innerHTML = "<p style='color:red;'>Geolocation is not supported by your browser.</p>";
+                return;
+            }
+
+            resultsDiv.innerHTML = "Accessing your GPS location...";
+
+            navigator.geolocation.getCurrentPosition(
+                async (position) => {
+                    const userLat = position.coords.latitude;
+                    const userLng = position.coords.longitude;
+
+                    resultsDiv.innerHTML = `Searching near your location (Lat: ${userLat.toFixed(2)}, Lng: ${userLng.toFixed(2)})...`;
+
+                    try {
+                        const response = await fetch(`https://washgo-backend-zz7a.onrender.com/api/car-washes/nearby?lat=${userLat}&lng=${userLng}&radius_km=30`);
+                        const result = await response.json();
+
+                        if (!result.success || result.data.length === 0) {
+                            resultsDiv.innerHTML = "<p>No car washes found within 30km of your current location.</p>";
+                            return;
+                        }
+
+                        let html = '';
+                        result.data.forEach(wash => {
+                            html += `
+                                <div class="card">
+                                    <h2>${wash.name}</h2>
+                                    <p><strong>Address:</strong> ${wash.address}</p>
+                                    <p><strong>Distance:</strong> ${wash.distance_km} km away</p>
+                                    <p><strong>Rating:</strong> ⭐ ${wash.average_rating}</p>
+                                    <p><strong>Closing Time:</strong> ${wash.closing_time}</p>
+                                    <p><strong>Service:</strong> ${wash.tier_name} - <strong>R${wash.price}</strong></p>
+                                </div>
+                            `;
+                        });
+                        resultsDiv.innerHTML = html;
+                    } catch (error) {
+                        console.error("Error fetching data:", error);
+                        resultsDiv.innerHTML = "<p style='color:red;'>Failed to connect to the Carwash Locator backend server.</p>";
+                    }
+                },
+                (error) => {
+                    console.error("Geolocation error:", error);
+                    resultsDiv.innerHTML = "<p style='color:red;'>Permission denied or location unavailable. Please enable location access in your browser settings.</p>";
+                },
+                { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+            );
+        }
+    </script>
+</body>
+</html>
