@@ -4,12 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>CarWash Locator South Africa</title>
-    <!-- PWA Manifest & Icons -->
     <link rel="manifest" href="./manifest.json">
     <link rel="apple-touch-icon" href="./icon-192.png">
     <meta name="theme-color" content="#007bff">
     
-    <!-- Leaflet CSS for Map Option -->
+    <!-- Leaflet CSS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     
     <style>
@@ -74,15 +73,35 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
+            flex-wrap: wrap;
+            gap: 10px;
         }
         .wash-info h3 { margin: 0 0 5px 0; color: var(--primary); }
         .wash-info p { margin: 3px 0; font-size: 0.9rem; color: #666; }
+        .card-actions {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 8px;
+        }
         .badge {
             background: var(--success);
             color: white;
             padding: 5px 10px;
             border-radius: 4px;
             font-size: 0.85rem;
+        }
+        .go-btn {
+            background-color: var(--success);
+            color: white;
+            padding: 6px 12px;
+            font-size: 0.85rem;
+            text-decoration: none;
+            border-radius: 4px;
+            font-weight: bold;
+        }
+        .go-btn:hover {
+            background-color: #218838;
         }
         .ad-container {
             margin-top: 2rem;
@@ -101,9 +120,10 @@
     </header>
 
     <div class="container">
-        <!-- Restored Action Buttons -->
+        <!-- Interactive Controls -->
         <div class="controls">
             <button id="btn-gonow" onclick="filterList('gonow')">⚡ Go Now (Nearest)</button>
+            <button id="btn-nearby" onclick="filterList('nearby')">📍 Nearby</button>
             <button id="btn-cheapest" onclick="filterList('cheapest')">💰 Cheapest</button>
             <button id="btn-map" onclick="toggleMap()">🗺️ Map Option</button>
         </div>
@@ -126,7 +146,7 @@
     <!-- Leaflet JS -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script>
-        // Nationwide South Africa Car Wash Dataset (Covering Multiple Provinces)
+        // Nationwide South Africa Car Wash Dataset
         const carWashes = [
             { name: "Sandton Mobile Handwash", province: "Gauteng", lat: -26.1076, lng: 28.0567, price: 80, rating: "4.8" },
             { name: "V&A Waterfront Auto Spa", province: "Western Cape", lat: -33.9036, lng: 18.4205, price: 120, rating: "4.9" },
@@ -145,7 +165,6 @@
         let map, mapInitialized = false;
         let currentFilter = 'gonow';
 
-        // Haversine formula to compute accurate distance in kilometers
         function calculateDistance(lat1, lon1, lat2, lon2) {
             const R = 6371; 
             const dLat = (lat2 - lat1) * Math.PI / 180;
@@ -164,7 +183,7 @@
                     userLng = position.coords.longitude;
                     renderWashes();
                 }, error => {
-                    console.warn("GPS Location access denied or unavailable. Using default SA regional center.");
+                    console.warn("GPS Location access denied or unavailable.");
                     renderWashes();
                 });
             } else {
@@ -175,42 +194,56 @@
         function renderWashes() {
             const listEl = document.getElementById('wash-list');
             
-            // Calculate distance for each item
             let processed = carWashes.map(wash => {
                 let dist = calculateDistance(userLat, userLng, wash.lat, wash.lng);
                 return { ...wash, distance: dist };
             });
 
-            // Sort based on active filter
-            if (currentFilter === 'gonow') {
+            // Sorting logic based on active filter
+            if (currentFilter === 'gonow' || currentFilter === 'nearby') {
                 processed.sort((a, b) => a.distance - b.distance);
             } else if (currentFilter === 'cheapest') {
-                processed.sort((a, b) => a.price - b.price);
+                // Sort by cheapest price first, then nearest distance for ties
+                processed.sort((a, b) => a.price - b.price || a.distance - b.distance);
             }
 
-            listEl.innerHTML = processed.map(wash => `
-                <div class="wash-card">
-                    <div class="wash-info">
-                        <h3>${wash.name}</h3>
-                        <p>📍 Province: <strong>${wash.province}</strong></p>
-                        <p>🚗 Distance: <strong>${wash.distance.toFixed(1)} km away</strong></p>
-                        <p>⭐ Rating: ${wash.rating} / 5.0</p>
+            listEl.innerHTML = processed.map(wash => {
+                const mapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${wash.lat},${wash.lng}`;
+                return `
+                    <div class="wash-card">
+                        <div class="wash-info">
+                            <h3>${wash.name}</h3>
+                            <p>📍 Province: <strong>${wash.province}</strong></p>
+                            <p>🚗 Distance: <strong>${wash.distance.toFixed(1)} km away</strong></p>
+                            <p>⭐ Rating: ${wash.rating} / 5.0</p>
+                        </div>
+                        <div class="card-actions">
+                            <span class="badge">R${wash.price}</span>
+                            <a href="${mapsUrl}" target="_blank" class="go-btn">🚗 Go Here</a>
+                        </div>
                     </div>
-                    <div>
-                        <span class="badge">R${wash.price}</span>
-                    </div>
-                </div>
-            `).join('');
+                `;
+            }).join('');
 
             if(mapInitialized) updateMapMarkers(processed);
         }
 
         function filterList(type) {
-            currentFilter = type;
+            // Toggle off if clicking the same filter twice
+            if (currentFilter === type) {
+                currentFilter = 'gonow'; // default back
+            } else {
+                currentFilter = type;
+            }
+
             document.getElementById('btn-gonow').classList.remove('active');
+            document.getElementById('btn-nearby').classList.remove('active');
             document.getElementById('btn-cheapest').classList.remove('active');
-            if(type === 'gonow') document.getElementById('btn-gonow').classList.add('active');
-            if(type === 'cheapest') document.getElementById('btn-cheapest').classList.add('active');
+
+            if(currentFilter === 'gonow') document.getElementById('btn-gonow').classList.add('active');
+            if(currentFilter === 'nearby') document.getElementById('btn-nearby').classList.add('active');
+            if(currentFilter === 'cheapest') document.getElementById('btn-cheapest').classList.add('active');
+            
             renderWashes();
         }
 
@@ -237,8 +270,9 @@
         function updateMapMarkers(locations) {
             if(!map) return;
             locations.forEach(wash => {
+                const mapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${wash.lat},${wash.lng}`;
                 L.marker([wash.lat, wash.lng]).addTo(map)
-                  .bindPopup(`<b>${wash.name}</b><br>Province: ${wash.province}<br>Price: R${wash.price}`);
+                  .bindPopup(`<b>${wash.name}</b><br>Province: ${wash.province}<br>Price: R${wash.price}<br><a href="${mapsUrl}" target="_blank">Open in Google Maps</a>`);
             });
         }
 
