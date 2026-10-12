@@ -7,9 +7,10 @@
     <style>
         body { font-family: Arial, sans-serif; max-width: 600px; margin: 40px auto; padding: 20px; background: #f4f7f6; }
         .card { background: white; padding: 20px; margin-bottom: 15px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .ad-banner { background: #ffffff; text-align: center; padding: 10px; margin: 15px 0; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); min-height: 50px; }
         h1 { color: #007bff; }
         h2 { margin-top: 0; color: #333; }
-        button { background: #007bff; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; font-size: 16px; }
+        button { background: #007bff; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; font-size: 16px; width: 100%; }
         button:hover { background: #0056b3; }
     </style>
 </head>
@@ -17,6 +18,13 @@
 
     <h1>Carwash Locator</h1>
     <p>Find nearby car washes using your live location:</p>
+
+    <!-- Ad Banner Slot for Monetization -->
+    <div class="ad-banner">
+        <!-- Replace this text with your Google AdSense / AdMob script when ready -->
+        <span style="color: #888; font-size: 14px;">Advertisement Area</span>
+    </div>
+
     <button onclick="fetchCarWashes()">Find Nearby Car Washes</button>
 
     <div id="results" style="margin-top: 20px;"></div>
