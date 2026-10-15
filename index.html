@@ -1,149 +1,4 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CarWash Locator South Africa</title>
-    <link rel="manifest" href="./manifest.json">
-    <link rel="apple-touch-icon" href="./icon-192.png">
-    <meta name="theme-color" content="#007bff">
-    
-    <!-- Leaflet CSS -->
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    
-    <style>
-        :root {
-            --primary: #007bff;
-            --success: #28a745;
-            --bg: #f4f7f6;
-            --text: #333;
-        }
-        body {
-            font-family: Arial, sans-serif;
-            margin: 0;
-            padding: 0;
-            background-color: var(--bg);
-            color: var(--text);
-        }
-        header {
-            background-color: var(--primary);
-            color: white;
-            padding: 1rem;
-            text-align: center;
-        }
-        .container {
-            max-width: 800px;
-            margin: 0 auto;
-            padding: 1rem;
-        }
-        .controls {
-            display: flex;
-            gap: 10px;
-            justify-content: center;
-            margin-bottom: 1.5rem;
-            flex-wrap: wrap;
-        }
-        button {
-            padding: 10px 18px;
-            border: none;
-            border-radius: 5px;
-            font-weight: bold;
-            cursor: pointer;
-            background-color: white;
-            color: var(--primary);
-            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-            transition: all 0.2s ease;
-        }
-        button.active, button:hover {
-            background-color: var(--primary);
-            color: white;
-        }
-        #map {
-            height: 300px;
-            border-radius: 8px;
-            margin-bottom: 1.5rem;
-            display: none;
-        }
-        .wash-card {
-            background: white;
-            padding: 15px;
-            border-radius: 8px;
-            margin-bottom: 10px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            flex-wrap: wrap;
-            gap: 10px;
-        }
-        .wash-info h3 { margin: 0 0 5px 0; color: var(--primary); }
-        .wash-info p { margin: 3px 0; font-size: 0.9rem; color: #666; }
-        .card-actions {
-            display: flex;
-            flex-direction: column;
-            align-items: flex-end;
-            gap: 8px;
-        }
-        .badge {
-            background: var(--success);
-            color: white;
-            padding: 5px 10px;
-            border-radius: 4px;
-            font-size: 0.85rem;
-        }
-        .go-btn {
-            background-color: var(--success);
-            color: white;
-            padding: 6px 12px;
-            font-size: 0.85rem;
-            text-decoration: none;
-            border-radius: 4px;
-            font-weight: bold;
-        }
-        .go-btn:hover {
-            background-color: #218838;
-        }
-        .ad-container {
-            margin-top: 2rem;
-            text-align: center;
-            background: #e9ecef;
-            padding: 15px;
-            border-radius: 8px;
-        }
-    </style>
-</head>
-<body>
-
-    <header>
-        <h1>CarWash Locator SA</h1>
-        <p>Find nearby car washes across all South African provinces</p>
-    </header>
-
-    <div class="container">
-        <!-- Interactive Controls -->
-        <div class="controls">
-            <button id="btn-gonow" onclick="filterList('gonow')">⚡ Go Now (All SA)</button>
-            <button id="btn-nearby" class="active" onclick="filterList('nearby')">📍 Nearby</button>
-            <button id="btn-cheapest" onclick="filterList('cheapest')">💰 Cheapest Nearby</button>
-            <button id="btn-map" onclick="toggleMap()">🗺️ Map Option</button>
-        </div>
-
-        <!-- Interactive Map View -->
-        <div id="map"></div>
-
-        <!-- Results List -->
-        <div id="wash-list">
-            <p style="text-align: center;">📍 Acquiring your precise GPS coordinates...</p>
-        </div>
-
-        <!-- Ad Banner Slot -->
-        <div class="ad-container">
-            <small>Sponsored Ad</small>
-            <div style="font-weight: bold; color: #555; padding: 10px;">Your Ad Banner Slot Here</div>
-        </div>
-    </div>
-
-    <!-- Leaflet JS -->
+<!-- Leaflet JS -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script>
         // Core local dataset points around Clearwater / West Rand / Randburg
@@ -163,21 +18,26 @@
             { name: "Strubens Valley Mobile Wash", province: "Gauteng", lat: -26.1120, lng: 27.9120, price: 65, rating: "4.4" }
         ];
 
-        // Programmatically generate a rich directory of 200+ local variations near your position
+        // Programmatically generate a rich directory of 200+ distinct local car washes
         let carWashes = [];
-        const neighborhoodSuffixes = ["Express", "Mobile Spa", "Handwash & Go", "Premium Clean", "Eco Wash", "Auto Clinic", "Quick Shine", "Pro Valet"];
+        const neighborhoodSuffixes = ["Express", "Mobile Spa", "Handwash & Go", "Premium Clean", "Eco Wash", "Auto Clinic", "Quick Shine", "Pro Valet", "Corner Wash", "Super Clean"];
+        const streetNames = ["Beyers Naude", "Hendrik Potgieter", "CR Swart", "Okonkor", "Wilgerood", "Dolphin", "Paul Kruger", "Ontdekkers", "Constantia", "Jim Fouche"];
         
-        baseCarWashes.forEach((item) => {
-            carWashes.push(item);
+        // Push original base items
+        baseCarWashes.forEach(item => carWashes.push(item));
+
+        // Generate 15 unique variants for each base location with expanded coordinate spread (up to ~18km radius)
+        baseCarWashes.forEach((item, baseIndex) => {
             for (let i = 1; i <= 15; i++) {
-                let randomLatOffset = (Math.random() - 0.5) * 0.05; 
-                let randomLngOffset = (Math.random() - 0.5) * 0.05;
-                let randomPrice = 60 + Math.floor(Math.random() * 40);
-                let randomRating = (4.0 + Math.random() * 0.9).toFixed(1);
+                let randomLatOffset = (Math.random() - 0.5) * 0.12; 
+                let randomLngOffset = (Math.random() - 0.5) * 0.12;
+                let randomPrice = 55 + Math.floor(Math.random() * 45);
+                let randomRating = (4.1 + Math.random() * 0.8).toFixed(1);
                 let suffix = neighborhoodSuffixes[Math.floor(Math.random() * neighborhoodSuffixes.length)];
+                let street = streetNames[Math.floor(Math.random() * streetNames.length)];
                 
                 carWashes.push({
-                    name: `${item.name.split(' ')[0]} ${suffix} #${i}`,
+                    name: `${street} ${suffix} (${i})`,
                     province: item.province,
                     lat: item.lat + randomLatOffset,
                     lng: item.lng + randomLngOffset,
@@ -242,12 +102,12 @@
 
             // Filtering & sorting logic
             if (currentFilter === 'nearby') {
-                // Strict local radius cap (within 20km) sorted by closest first
-                processed = processed.filter(wash => wash.distance <= 20);
+                // Allow a generous local radius cap (e.g., within 25km) to display a long scrolling list
+                processed = processed.filter(wash => wash.distance <= 25);
                 processed.sort((a, b) => a.distance - b.distance);
             } else if (currentFilter === 'cheapest') {
-                // STRICT RULE: Only look for cheap options within a local driving distance (20km), then sort by lowest price
-                processed = processed.filter(wash => wash.distance <= 20);
+                // Strict local check (within 25km) sorted by lowest price first
+                processed = processed.filter(wash => wash.distance <= 25);
                 processed.sort((a, b) => a.price - b.price || a.distance - b.distance);
             } else if (currentFilter === 'gonow') {
                 // Show all of South Africa sorted by distance
@@ -255,7 +115,7 @@
             }
 
             if (processed.length === 0) {
-                listEl.innerHTML = `<p style="text-align: center;">No car washes found within 20km. Click <strong>"Go Now (All SA)"</strong> above to view wider listings.</p>`;
+                listEl.innerHTML = `<p style="text-align: center;">No car washes found within range. Click <strong>"Go Now (All SA)"</strong> above to view wider listings.</p>`;
                 return;
             }
 
@@ -301,7 +161,7 @@
                 mapEl.style.display = 'block';
                 btnMap.classList.add('active');
                 if (!mapInitialized) {
-                    map = L.map('map').setView([userLat, userLng], 13);
+                    map = L.map('map').setView([userLat, userLng], 12);
                     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
                         maxZoom: 18,
                     }).addTo(map);
@@ -318,12 +178,10 @@
             if(!map) return;
             locations.forEach(wash => {
                 const mapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${wash.lat},${wash.lng}`;
-                L.marker([wash.lat, wash.lng]).addTo(map)
+                L.marker([wash.lat, wash.lng]).adal
                   .bindPopup(`<b>${wash.name}</b><br>Distance: ${wash.distance.toFixed(1)} km<br>Price: R${wash.price}<br><a href="${mapsUrl}" target="_blank">Open in Google Maps</a>`);
             });
         }
 
         window.onload = initApp;
     </script>
-</body>
-</html>
