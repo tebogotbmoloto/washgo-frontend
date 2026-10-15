@@ -228,10 +228,8 @@
             return R * c;
         }
 
-        // Helper to determine if car wash is open (Standard hours: 07:00 to 18:00)
         function getBusinessStatus() {
             const currentHour = new Date().getHours();
-            // Open between 7 AM and 6 PM
             if (currentHour >= 7 && currentHour < 18) {
                 return { text: "🟢 Open Now", class: "status-open" };
             } else {
@@ -247,7 +245,7 @@
                     renderWashes();
                 }, error => {
                     console.warn("GPS Location access denied. Falling back to default region center.");
-                    userLat = -26.1285; // Default near Clearwater
+                    userLat = -26.1285; 
                     userLng = 27.9050;
                     renderWashes();
                 }, { enableHighAccuracy: true, timeout: 10000 });
@@ -266,17 +264,13 @@
                 return { ...wash, distance: dist };
             });
 
-            // Filtering & sorting logic
             if (currentFilter === 'nearby') {
-                // Local radius cap (within 25km) sorted by closest first
                 processed = processed.filter(wash => wash.distance <= 25);
                 processed.sort((a, b) => a.distance - b.distance);
             } else if (currentFilter === 'cheapest') {
-                // Strict local check (within 25km) sorted by lowest price first
                 processed = processed.filter(wash => wash.distance <= 25);
                 processed.sort((a, b) => a.price - b.price || a.distance - b.distance);
             } else if (currentFilter === 'gonow') {
-                // Show all of South Africa sorted by distance
                 processed.sort((a, b) => a.distance - b.distance);
             }
 
