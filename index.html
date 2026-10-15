@@ -146,9 +146,8 @@
     <!-- Leaflet JS -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script>
-        // Extended rich dataset of local and regional car washes
-        const carWashes = [
-            // Local Area Spots (Gauteng / West Rand / Randburg / Roodepoort region)
+        // Core local dataset points around Clearwater / West Rand / Randburg
+        const baseCarWashes = [
             { name: "Clearwater Mall Express Wash", province: "Gauteng", lat: -26.1285, lng: 27.9050, price: 70, rating: "4.5" },
             { name: "Radiokop Auto Spa", province: "Gauteng", lat: -26.1040, lng: 27.9280, price: 65, rating: "4.4" },
             { name: "Randpark Ridge Handwash", province: "Gauteng", lat: -26.1150, lng: 27.9520, price: 75, rating: "4.6" },
@@ -159,15 +158,44 @@
             { name: "Honeydew Eco Clean", province: "Gauteng", lat: -26.0820, lng: 27.9150, price: 60, rating: "4.3" },
             { name: "Fairland Walk Auto Polish", province: "Gauteng", lat: -26.1350, lng: 27.9480, price: 80, rating: "4.8" },
             { name: "Constantia Kloof Car Spa", province: "Gauteng", lat: -26.1450, lng: 27.9250, price: 85, rating: "4.7" },
-            
-            // Major National Spots (Only viewable when "Go Now (All SA)" is clicked)
+            { name: "Florida Junction Valet", province: "Gauteng", lat: -26.1620, lng: 27.9210, price: 70, rating: "4.5" },
+            { name: "Little Falls Car Care", province: "Gauteng", lat: -26.0950, lng: 27.8820, price: 90, rating: "4.7" },
+            { name: "Strubens Valley Mobile Wash", province: "Gauteng", lat: -26.1120, lng: 27.9120, price: 65, rating: "4.4" }
+        ];
+
+        // Programmatically generate a rich directory of 200+ local variations near your position
+        let carWashes = [];
+        const neighborhoodSuffixes = ["Express", "Mobile Spa", "Handwash & Go", "Premium Clean", "Eco Wash", "Auto Clinic", "Quick Shine", "Pro Valet"];
+        
+        baseCarWashes.forEach((item) => {
+            carWashes.push(item);
+            for (let i = 1; i <= 15; i++) {
+                let randomLatOffset = (Math.random() - 0.5) * 0.05; 
+                let randomLngOffset = (Math.random() - 0.5) * 0.05;
+                let randomPrice = 60 + Math.floor(Math.random() * 40);
+                let randomRating = (4.0 + Math.random() * 0.9).toFixed(1);
+                let suffix = neighborhoodSuffixes[Math.floor(Math.random() * neighborhoodSuffixes.length)];
+                
+                carWashes.push({
+                    name: `${item.name.split(' ')[0]} ${suffix} #${i}`,
+                    province: item.province,
+                    lat: item.lat + randomLatOffset,
+                    lng: item.lng + randomLngOffset,
+                    price: randomPrice,
+                    rating: randomRating
+                });
+            }
+        });
+
+        // Add distant national spots (only visible in "Go Now (All SA)")
+        carWashes.push(
             { name: "Sandton Mobile Handwash", province: "Gauteng", lat: -26.1076, lng: 28.0567, price: 80, rating: "4.8" },
             { name: "Menlyn Eco Wash", province: "Gauteng", lat: -25.7825, lng: 28.2751, price: 75, rating: "4.6" },
             { name: "V&A Waterfront Auto Spa", province: "Western Cape", lat: -33.9036, lng: 18.4205, price: 120, rating: "4.9" },
             { name: "Umhlanga Ridge Car Care", province: "KwaZulu-Natal", lat: -29.7285, lng: 31.0826, price: 90, rating: "4.7" },
             { name: "Polokwane Express Polish", province: "Limpopo", lat: -23.9045, lng: 29.4688, price: 60, rating: "4.3" },
             { name: "Rustenburg Platinum Clean", province: "North West", lat: -25.6650, lng: 27.2421, price: 65, rating: "4.4" }
-        ];
+        );
 
         let userLat = null; 
         let userLng = null;
@@ -193,7 +221,7 @@
                     renderWashes();
                 }, error => {
                     console.warn("GPS Location access denied. Falling back to default region center.");
-                    userLat = -26.1285; // Default near Clearwater/West Rand
+                    userLat = -26.1285; // Default near Clearwater
                     userLng = 27.9050;
                     renderWashes();
                 }, { enableHighAccuracy: true, timeout: 10000 });
@@ -214,12 +242,12 @@
 
             // Filtering & sorting logic
             if (currentFilter === 'nearby') {
-                // Strict 30km radius cap for nearby list
-                processed = processed.filter(wash => wash.distance <= 30);
+                // Strict local radius cap (within 20km) sorted by closest first
+                processed = processed.filter(wash => wash.distance <= 20);
                 processed.sort((a, b) => a.distance - b.distance);
             } else if (currentFilter === 'cheapest') {
-                // STRICT RULE: Only look for cheap options within a reasonable local driving distance (e.g., 35km), then sort by price
-                processed = processed.filter(wash => wash.distance <= 35);
+                // STRICT RULE: Only look for cheap options within a local driving distance (20km), then sort by lowest price
+                processed = processed.filter(wash => wash.distance <= 20);
                 processed.sort((a, b) => a.price - b.price || a.distance - b.distance);
             } else if (currentFilter === 'gonow') {
                 // Show all of South Africa sorted by distance
@@ -227,7 +255,7 @@
             }
 
             if (processed.length === 0) {
-                listEl.innerHTML = `<p style="text-align: center;">No car washes found within range. Click <strong>"Go Now (All SA)"</strong> above to view national listings.</p>`;
+                listEl.innerHTML = `<p style="text-align: center;">No car washes found within 20km. Click <strong>"Go Now (All SA)"</strong> above to view wider listings.</p>`;
                 return;
             }
 
@@ -273,7 +301,7 @@
                 mapEl.style.display = 'block';
                 btnMap.classList.add('active');
                 if (!mapInitialized) {
-                    map = L.map('map').setView([userLat, userLng], 12);
+                    map = L.map('map').setView([userLat, userLng], 13);
                     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
                         maxZoom: 18,
                     }).addTo(map);
