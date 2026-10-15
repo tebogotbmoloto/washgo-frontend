@@ -146,7 +146,7 @@
     <!-- Leaflet JS -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script>
-        // Comprehensive Dataset including local spots around Roodepoort, Radiokop, Northriding, etc.
+        // Expanded dataset including local spots around Clearwater, Radiokop, Northriding, etc.
         const carWashes = [
             { name: "Plush Car Wash (Bel Air)", province: "Gauteng", lat: -26.0552, lng: 27.9541, price: 85, rating: "4.7" },
             { name: "BigF Car Wash (Lifestyle)", province: "Gauteng", lat: -26.0691, lng: 27.9554, price: 90, rating: "4.6" },
@@ -184,7 +184,6 @@
                     renderWashes();
                 }, error => {
                     console.warn("GPS Location access denied. Falling back to default region center.");
-                    // Fallback to local coordinates around Northriding/Radiokop area
                     userLat = -26.0691;
                     userLng = 27.9554;
                     renderWashes();
