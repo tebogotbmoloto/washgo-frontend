@@ -1,3 +1,4 @@
+[
   {"name":"Sample Car Wash 001","province":"Gauteng","lat":-26.200000,"lng":28.000000,"price":60,"rating":"4.0","closesAt":20,"is24Hours":false},
   {"name":"Sample Car Wash 002","province":"Gauteng","lat":-26.199000,"lng":28.001000,"price":61,"rating":"4.1","closesAt":21,"is24Hours":false},
   {"name":"Sample Car Wash 003","province":"Gauteng","lat":-26.198000,"lng":28.002000,"price":62,"rating":"4.2","closesAt":22,"is24Hours":false},
@@ -173,4 +174,4 @@
   {"name":"Sample Car Wash 173","province":"Free State","lat":-28.448000,"lng":26.852000,"price":70,"rating":"4.2","closesAt":22,"is24Hours":false},
   {"name":"Sample Car Wash 174","province":"Free State","lat":-28.447000,"lng":26.853000,"price":71,"rating":"4.3","closesAt":23,"is24Hours":false},
   {"name":"Sample Car Wash 175","province":"Free State","lat":-28.446000,"lng":26.854000,"price":72,"rating":"4.4","closesAt":24,"is24Hours":true}
-],
+]
