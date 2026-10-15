@@ -117,6 +117,7 @@
             padding: 15px;
             border-radius: 8px;
         }
+        #show-more-container { text-align: center; margin-top: 12px; }
     </style>
 </head>
 <body>
@@ -142,6 +143,9 @@
         <!-- Results List -->
         <div id="wash-list">
             <p style="text-align: center;">📍 Acquiring your precise GPS coordinates...</p>
+        </div>
+        <div id="show-more-container" style="display:none;">
+            <button id="btn-show-more" onclick="loadMore()">Show more results</button>
         </div>
 
         <!-- Ad Banner Slot -->
@@ -184,6 +188,10 @@
         let markersLayer = null;
         let currentFilter = 'nearby';
 
+        // pagination to avoid UI truncation / browser limits when listing many results
+        const PAGE_SIZE = 200;
+        let currentPage = 1; // 1-based pages
+
         function calculateDistance(lat1, lon1, lat2, lon2) {
             const R = 6371;
             const dLat = (lat2 - lat1) * Math.PI / 180;
@@ -210,39 +218,51 @@
 
         function renderWashes() {
             const listEl = document.getElementById('wash-list');
+            const showMoreEl = document.getElementById('show-more-container');
             if (!listEl) return;
-            
-            let processed = carWashes.map(wash => {
+
+            // compute full processed list based on current filter
+            let processedFull = carWashes.map(wash => {
                 let dist = calculateDistance(userLat, userLng, wash.lat, wash.lng);
                 let status = getBusinessStatus(wash);
                 return Object.assign({}, wash, { distance: dist, status: status });
             });
 
             if (currentFilter === 'nearby') {
-                processed = processed.filter(wash => wash.distance <= 25);
-                processed.sort((a, b) => a.distance - b.distance);
+                processedFull = processedFull.filter(wash => wash.distance <= 25);
+                processedFull.sort((a, b) => a.distance - b.distance);
             } else if (currentFilter === 'cheapest') {
-                processed = processed.filter(wash => wash.distance <= 25);
-                processed.sort((a, b) => a.price - b.price || a.distance - b.distance);
+                processedFull = processedFull.filter(wash => wash.distance <= 25);
+                processedFull.sort((a, b) => a.price - b.price || a.distance - b.distance);
             } else if (currentFilter === 'open') {
                 // Show all nearby washes but place open ones first; do NOT hide closed washes.
-                processed = processed.filter(wash => wash.distance <= 25);
-                processed.sort((a, b) => {
+                processedFull = processedFull.filter(wash => wash.distance <= 25);
+                processedFull.sort((a, b) => {
                     if (a.status.isOpen === b.status.isOpen) return a.distance - b.distance;
                     return a.status.isOpen ? -1 : 1;
                 });
             } else if (currentFilter === 'gonow') {
-                processed.sort((a, b) => a.price - b.price || a.distance - b.distance);
+                // 'Go Now' should show all car washes across SA (no distance filter)
+                processedFull.sort((a, b) => a.price - b.price || a.distance - b.distance);
             }
 
-            if (processed.length === 0) {
+            // Reset pagination if necessary
+            if (processedFull.length <= PAGE_SIZE) {
+                currentPage = 1;
+            }
+
+            const start = 0;
+            const end = PAGE_SIZE * currentPage;
+            const displayed = processedFull.slice(start, end);
+
+            if (displayed.length === 0) {
                 listEl.innerHTML = '<p style="text-align: center;">No car washes found matching this filter criteria right now.</p>';
-                // also clear map markers if visible
                 if (mapInitialized && markersLayer) markersLayer.clearLayers();
+                showMoreEl.style.display = 'none';
                 return;
             }
 
-            listEl.innerHTML = processed.map(wash => {
+            listEl.innerHTML = displayed.map(wash => {
                 const mapsUrl = "https://www.google.com/maps/dir/?api=1&destination=" + encodeURIComponent(wash.lat + "," + wash.lng);
                 return '<div class="wash-card">' +
                     '<div class="wash-info">' +
@@ -258,13 +278,27 @@
                 '</div>';
             }).join('');
 
-            if (mapInitialized) {
-                updateMapMarkers(processed);
+            // show/hide the 'Show more' control
+            if (processedFull.length > end) {
+                showMoreEl.style.display = 'block';
+            } else {
+                showMoreEl.style.display = 'none';
             }
+
+            // Update map markers for the full processed set (so map shows all relevant markers)
+            if (mapInitialized) {
+                updateMapMarkers(processedFull);
+            }
+        }
+
+        function loadMore() {
+            currentPage += 1;
+            renderWashes();
         }
 
         function filterList(type) {
             currentFilter = type;
+            currentPage = 1; // reset pagination when changing filter
 
             document.getElementById('btn-gonow').classList.remove('active');
             document.getElementById('btn-nearby').classList.remove('active');
@@ -322,8 +356,12 @@
 
             // fit bounds to markers if there are any
             const bounds = markersLayer.getBounds();
-            if (bounds.isValid && bounds.isValid()) {
-                map.fitBounds(bounds.pad(0.2));
+            if (bounds && typeof bounds.isValid === 'function' ? bounds.isValid() : !!bounds) {
+                if (typeof bounds.pad === 'function') {
+                    map.fitBounds(bounds.pad(0.2));
+                } else {
+                    map.fitBounds(bounds);
+                }
             } else {
                 map.setView([userLat, userLng], 12);
             }
