@@ -134,6 +134,11 @@
         .pager button { padding:6px 10px; }
         .small-muted { color:#666; font-size:0.9rem; }
 
+        /* small status bar */
+        .status-bar { display:flex; gap:12px; align-items:center; color:#666; font-size:0.9rem; }
+        .status-bar .last-updated { font-weight:600; }
+        .refresh-btn { padding:6px 10px; background:#fff; border-radius:6px; border:1px solid #ddd; }
+
         /* Sticky pagination (stays visible while scrolling within container) */
         .pagination-sticky {
             position: sticky;
@@ -188,7 +193,13 @@
         </div>
 
         <!-- status about data source -->
-        <div id="data-status" class="small-muted" style="margin-bottom:10px;">Loading car wash data…</div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+            <div id="data-status" class="small-muted">Loading car wash data…</div>
+            <div class="status-bar">
+                <div class="last-updated small-muted" id="last-updated">Last updated: —</div>
+                <button id="manual-refresh" class="refresh-btn">🔄 Refresh now</button>
+            </div>
+        </div>
 
         <!-- Interactive Map View -->
         <div id="map"></div>
@@ -240,7 +251,7 @@
         let currentPage = 1;
 
         const NEARBY_RADIUS_KM = 25;
-        const POLL_INTERVAL_MS = 60 * 1000; // 60s - adjust as needed
+        const POLL_INTERVAL_MS = 60 * 1000; // 60s
 
         function calculateDistance(lat1, lon1, lat2, lon2) {
             const R = 6371;
@@ -261,6 +272,11 @@
             return { isOpen: false, text: "🔴 Closed (Closes at " + wash.closesAt + ":00)", class: "status-closed" };
         }
 
+        function keyFor(w) {
+            // create a stable key for a wash entry — name + lat + lng is a reasonable composite
+            return (w.name || '').trim() + '|' + (+w.lat).toFixed(6) + '|' + (+w.lng).toFixed(6);
+        }
+
         function groupByProvince(items) {
             const mapObj = {};
             items.forEach(it => {
@@ -279,7 +295,6 @@
 
         // load external file with cache-bust; called at startup and by poller
         async function fetchCarWashesOnce(cacheBust = true) {
-            const statusEl = document.getElementById('data-status');
             try {
                 const url = 'carwashes.json' + (cacheBust ? ('?cacheBust=' + Date.now()) : '');
                 const res = await fetch(url, { cache: 'no-store' });
@@ -293,12 +308,94 @@
             }
         }
 
+        // apply diff: add new entries, update changed ones, remove missing entries
+        function applyDiffAndUpdate(newList) {
+            const statusEl = document.getElementById('data-status');
+            const lastUpdatedEl = document.getElementById('last-updated');
+            if (!Array.isArray(newList)) return false;
+
+            const oldMap = new Map(carWashes.map(w => [keyFor(w), w]));
+            const newMap = new Map(newList.map(w => [keyFor(w), w]));
+
+            const added = [];
+            const updated = [];
+            const removed = [];
+
+            // find added and updated
+            for (const [k, newItem] of newMap.entries()) {
+                if (!oldMap.has(k)) {
+                    added.push(newItem);
+                } else {
+                    const oldItem = oldMap.get(k);
+                    // simple shallow comparison (JSON) — detects field changes
+                    if (JSON.stringify(oldItem) !== JSON.stringify(newItem)) {
+                        updated.push(newItem);
+                    }
+                }
+            }
+
+            // find removed
+            for (const [k, oldItem] of oldMap.entries()) {
+                if (!newMap.has(k)) removed.push(oldItem);
+            }
+
+            // If nothing changed, update status and return
+            if (added.length === 0 && updated.length === 0 && removed.length === 0) {
+                if (statusEl) statusEl.innerText = 'Checked: no changes (' + carWashes.length + ' items)';
+                if (lastUpdatedEl) lastUpdatedEl.innerText = 'Last checked: ' + (new Date()).toLocaleTimeString();
+                return false;
+            }
+
+            // Apply removals
+            if (removed.length > 0) {
+                const removedKeys = new Set(removed.map(r => keyFor(r)));
+                carWashes = carWashes.filter(w => !removedKeys.has(keyFor(w)));
+            }
+
+            // Apply updates (replace in-place)
+            if (updated.length > 0) {
+                const updateMap = new Map(updated.map(u => [keyFor(u), u]));
+                carWashes = carWashes.map(w => updateMap.has(keyFor(w)) ? updateMap.get(keyFor(w)) : w);
+            }
+
+            // Apply additions — append at the end so they appear in list; you can change to unshift to show on top
+            if (added.length > 0) {
+                carWashes = carWashes.concat(added);
+            }
+
+            // Update UI and status
+            populateProvinceFilter();
+            renderWashes();
+            if (statusEl) statusEl.innerText = 'Updated: +' + added.length + ' / ~' + updated.length + ' changes / -' + removed.length + ' removed — total ' + carWashes.length;
+            if (lastUpdatedEl) lastUpdatedEl.innerText = 'Last updated: ' + (new Date()).toLocaleString();
+            console.info('Diff applied: added', added.length, 'updated', updated.length, 'removed', removed.length);
+            return true;
+        }
+
+        async function manualFetchAndApply() {
+            const statusEl = document.getElementById('data-status');
+            const lastUpdatedEl = document.getElementById('last-updated');
+            if (statusEl) statusEl.innerText = 'Fetching carwashes.json…';
+            const json = await fetchCarWashesOnce(true);
+            if (json && Array.isArray(json)) {
+                const changed = applyDiffAndUpdate(json);
+                if (!changed) {
+                    if (statusEl) statusEl.innerText = 'No changes found — still ' + carWashes.length + ' items';
+                }
+                if (lastUpdatedEl && !changed) lastUpdatedEl.innerText = 'Last checked: ' + (new Date()).toLocaleTimeString();
+            } else {
+                if (statusEl) statusEl.innerText = 'Unable to fetch carwashes.json; using existing data (' + carWashes.length + ' items)';
+            }
+        }
+
         (async function loadExternalData(){
             const statusEl = document.getElementById('data-status');
+            const lastUpdatedEl = document.getElementById('last-updated');
             const json = await fetchCarWashesOnce(true);
             if (json && json.length > 0) {
                 carWashes = json;
                 if (statusEl) statusEl.innerText = 'Loaded ' + json.length + ' car washes from carwashes.json (live)';
+                if (lastUpdatedEl) lastUpdatedEl.innerText = 'Last updated: ' + (new Date()).toLocaleString();
             } else {
                 if (statusEl) statusEl.innerText = 'Using embedded sample data (' + carWashes.length + ' items). carwashes.json not found or empty.';
             }
@@ -310,30 +407,15 @@
         })();
 
         function startPollingForUpdates() {
+            // Use setInterval to poll; the manual refresh button uses the same apply logic
             setInterval(async () => {
-                const statusEl = document.getElementById('data-status');
-                const json = await fetchCarWashesOnce(true);
-                if (json && Array.isArray(json)) {
-                    // naive compare: stringify (order matters). This is simple and effective when the source is authoritative.
-                    try {
-                        const oldStr = JSON.stringify(carWashes);
-                        const newStr = JSON.stringify(json);
-                        if (oldStr !== newStr) {
-                            carWashes = json;
-                            populateProvinceFilter();
-                            renderWashes();
-                            if (statusEl) statusEl.innerText = 'Updated: ' + json.length + ' car washes loaded at ' + (new Date()).toLocaleTimeString();
-                            console.info('carwashes.json changed — UI updated');
-                        } else {
-                            if (statusEl) statusEl.innerText = 'Checked for updates: no changes (' + carWashes.length + ' items) — last checked ' + (new Date()).toLocaleTimeString();
-                        }
-                    } catch (e) {
-                        console.error('Error comparing car wash payloads', e);
-                    }
-                } else {
-                    if (statusEl) statusEl.innerText = 'Checked for updates: carwashes.json not available. Using local data (' + carWashes.length + ' items)';
-                }
+                await manualFetchAndApply();
             }, POLL_INTERVAL_MS);
+
+            // bind manual refresh button
+            document.getElementById('manual-refresh').addEventListener('click', () => {
+                manualFetchAndApply();
+            });
         }
 
         // Request fresh geolocation then render (used when user clicks 'Nearby')
