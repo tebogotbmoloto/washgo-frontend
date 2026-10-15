@@ -163,8 +163,8 @@
         <!-- Interactive Controls -->
         <div class="controls">
             <div class="left">
-                <button id="btn-gonow" onclick="filterList('gonow')">⚡ Go Now (All SA)</button>
-                <button id="btn-nearby" class="active" onclick="filterList('nearby')">📍 Nearby</button>
+                <button id="btn-gonow" class="active" onclick="filterList('gonow')">⚡ Go Now (All SA)</button>
+                <button id="btn-nearby" onclick="filterList('nearby')">📍 Nearby</button>
                 <button id="btn-cheapest" onclick="filterList('cheapest')">💰 Cheapest Nearby</button>
                 <button id="btn-open" onclick="filterList('open')">🟢 Open First</button>
                 <button id="btn-map" onclick="toggleMap()">🗺️ Map Option</button>
@@ -179,9 +179,10 @@
                 <label class="small-muted">Page size:</label>
                 <select id="page-size-select">
                     <option value="10">10</option>
-                    <option value="20" selected>20</option>
+                    <option value="20">20</option>
                     <option value="50">50</option>
-                    <option value="100">100</option>
+                    <option value="100" selected>100</option>
+                    <option value="all">All</option>
                 </select>
             </div>
         </div>
@@ -194,7 +195,7 @@
 
         <!-- Results List -->
         <div id="wash-list">
-            <p style="text-align: center;">📍 Acquiring your precise GPS coordinates...</p>
+            <p style="text-align: center;">📍 Loading car washes for all of South Africa...</p>
         </div>
 
         <!-- Pagination Controls (sticky) -->
@@ -226,44 +227,20 @@
 
         let carWashes = SAMPLE_CARWASHES.slice();
 
-        (function loadExternalData(){
-            const statusEl = document.getElementById('data-status');
-            // cache-bust to avoid stale cached responses during testing
-            const url = 'carwashes.json?cacheBust=' + Date.now();
-            fetch(url).then(r => {
-                if (!r.ok) throw new Error('HTTP ' + r.status);
-                return r.json();
-            }).then(json => {
-                if (Array.isArray(json) && json.length > 0) {
-                    carWashes = json;
-                    console.info('Loaded', json.length, 'car washes from carwashes.json');
-                    if (statusEl) statusEl.innerText = 'Loaded ' + json.length + ' car washes from carwashes.json';
-                    populateProvinceFilter();
-                    renderWashes();
-                } else {
-                    throw new Error('no entries in carwashes.json');
-                }
-            }).catch(err => {
-                console.warn('Could not load carwashes.json — using embedded sample. Error:', err);
-                if (statusEl) statusEl.innerText = 'Using embedded sample data (' + carWashes.length + ' items). Failed to load carwashes.json: ' + err.message;
-                populateProvinceFilter();
-                renderWashes();
-            });
-        })();
-
-        // geolocation fallback
-        let userLat = -26.1285;
+        // configuration: show all by default and poll for updates
+        let currentFilter = 'gonow';
+        let userLat = -26.1285; // fallback
         let userLng = 27.9050;
         let map = null;
         let mapInitialized = false;
         let markersLayer = null;
-        let currentFilter = 'nearby';
 
         // pagination & search state
-        let pageSize = 20;
+        let pageSize = 100;
         let currentPage = 1;
 
         const NEARBY_RADIUS_KM = 25;
+        const POLL_INTERVAL_MS = 60 * 1000; // 60s - adjust as needed
 
         function calculateDistance(lat1, lon1, lat2, lon2) {
             const R = 6371;
@@ -285,19 +262,78 @@
         }
 
         function groupByProvince(items) {
-            const map = {};
+            const mapObj = {};
             items.forEach(it => {
                 const p = it.province || 'Unknown';
-                if (!map[p]) map[p] = [];
-                map[p].push(it);
+                if (!mapObj[p]) mapObj[p] = [];
+                mapObj[p].push(it);
             });
-            return map;
+            return mapObj;
         }
 
         function populateProvinceFilter() {
             const sel = document.getElementById('province-filter');
             const provinces = Array.from(new Set(carWashes.map(c => c.province || 'Unknown'))).sort();
             sel.innerHTML = '<option value="all">All</option>' + provinces.map(p => '<option value="'+encodeURIComponent(p)+'">'+p+'</option>').join('');
+        }
+
+        // load external file with cache-bust; called at startup and by poller
+        async function fetchCarWashesOnce(cacheBust = true) {
+            const statusEl = document.getElementById('data-status');
+            try {
+                const url = 'carwashes.json' + (cacheBust ? ('?cacheBust=' + Date.now()) : '');
+                const res = await fetch(url, { cache: 'no-store' });
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                const json = await res.json();
+                if (!Array.isArray(json)) throw new Error('Invalid data format');
+                return json;
+            } catch (err) {
+                console.warn('fetchCarWashesOnce error:', err);
+                return null;
+            }
+        }
+
+        (async function loadExternalData(){
+            const statusEl = document.getElementById('data-status');
+            const json = await fetchCarWashesOnce(true);
+            if (json && json.length > 0) {
+                carWashes = json;
+                if (statusEl) statusEl.innerText = 'Loaded ' + json.length + ' car washes from carwashes.json (live)';
+            } else {
+                if (statusEl) statusEl.innerText = 'Using embedded sample data (' + carWashes.length + ' items). carwashes.json not found or empty.';
+            }
+            populateProvinceFilter();
+            renderWashes();
+
+            // start polling for updates
+            startPollingForUpdates();
+        })();
+
+        function startPollingForUpdates() {
+            setInterval(async () => {
+                const statusEl = document.getElementById('data-status');
+                const json = await fetchCarWashesOnce(true);
+                if (json && Array.isArray(json)) {
+                    // naive compare: stringify (order matters). This is simple and effective when the source is authoritative.
+                    try {
+                        const oldStr = JSON.stringify(carWashes);
+                        const newStr = JSON.stringify(json);
+                        if (oldStr !== newStr) {
+                            carWashes = json;
+                            populateProvinceFilter();
+                            renderWashes();
+                            if (statusEl) statusEl.innerText = 'Updated: ' + json.length + ' car washes loaded at ' + (new Date()).toLocaleTimeString();
+                            console.info('carwashes.json changed — UI updated');
+                        } else {
+                            if (statusEl) statusEl.innerText = 'Checked for updates: no changes (' + carWashes.length + ' items) — last checked ' + (new Date()).toLocaleTimeString();
+                        }
+                    } catch (e) {
+                        console.error('Error comparing car wash payloads', e);
+                    }
+                } else {
+                    if (statusEl) statusEl.innerText = 'Checked for updates: carwashes.json not available. Using local data (' + carWashes.length + ' items)';
+                }
+            }, POLL_INTERVAL_MS);
         }
 
         // Request fresh geolocation then render (used when user clicks 'Nearby')
@@ -361,19 +397,29 @@
 
             // pagination calculations
             const total = processedFull.length;
-            const totalPages = Math.max(1, Math.ceil(total / pageSize));
+
+            // handle 'all' page size
+            const pageSizeSelectVal = document.getElementById('page-size-select')?.value || '100';
+            let effectivePageSize = pageSize;
+            if (pageSizeSelectVal === 'all') {
+                effectivePageSize = total || 1;
+            } else {
+                effectivePageSize = parseInt(pageSizeSelectVal, 10) || pageSize;
+            }
+
+            const totalPages = Math.max(1, Math.ceil(total / effectivePageSize));
             if (currentPage > totalPages) currentPage = totalPages;
-            const startIdx = (currentPage - 1) * pageSize;
-            const endIdx = startIdx + pageSize;
+            const startIdx = (currentPage - 1) * effectivePageSize;
+            const endIdx = startIdx + effectivePageSize;
             const displayed = processedFull.slice(startIdx, endIdx);
 
-            if (statusEl) statusEl.innerText = (carWashes.length || 0) + ' total car washes available — showing ' + displayed.length + (currentFilter === 'nearby' ? (' within ' + NEARBY_RADIUS_KM + ' km') : '') + '.';
+            if (statusEl) statusEl.innerText = (carWashes.length || 0) + ' total car washes available — showing ' + displayed.length + (currentFilter === 'nearby' ? (' within ' + NEARBY_RADIUS_KM + 'km') : '');
 
             // show results grouped by province (only on displayed set)
             if (displayed.length === 0) {
                 listEl.innerHTML = '<p style="text-align:center;">No car washes found matching this filter or search.</p>';
                 if (mapInitialized && markersLayer) markersLayer.clearLayers();
-                pager.style.display = 'none';
+                if (pager) pager.style.display = 'none';
                 return;
             }
 
@@ -402,10 +448,10 @@
             listEl.innerHTML = html;
 
             // pagination UI
-            pager.style.display = total > pageSize ? 'flex' : 'none';
-            document.getElementById('page-info').innerText = currentPage + ' / ' + totalPages + ' — ' + total + ' results';
-            document.getElementById('prev-page').disabled = currentPage <= 1;
-            document.getElementById('next-page').disabled = currentPage >= totalPages;
+            if (pager) pager.style.display = total > effectivePageSize ? 'flex' : 'none';
+            if (document.getElementById('page-info')) document.getElementById('page-info').innerText = currentPage + ' / ' + totalPages + ' — ' + total + ' results';
+            if (document.getElementById('prev-page')) document.getElementById('prev-page').disabled = currentPage <= 1;
+            if (document.getElementById('next-page')) document.getElementById('next-page').disabled = currentPage >= totalPages;
 
             // update map markers to show only displayed items
             if (mapInitialized) updateMapMarkers(displayed);
@@ -419,15 +465,12 @@
         function filterList(type) {
             currentFilter = type;
             currentPage = 1;
-            document.getElementById('btn-gonow').classList.remove('active');
-            document.getElementById('btn-nearby').classList.remove('active');
-            document.getElementById('btn-cheapest').classList.remove('active');
-            document.getElementById('btn-open').classList.remove('active');
+            ['btn-gonow','btn-nearby','btn-cheapest','btn-open'].forEach(id => document.getElementById(id)?.classList.remove('active'));
 
-            if (currentFilter === 'gonow') document.getElementById('btn-gonow').classList.add('active');
-            if (currentFilter === 'nearby') document.getElementById('btn-nearby').classList.add('active');
-            if (currentFilter === 'cheapest') document.getElementById('btn-cheapest').classList.add('active');
-            if (currentFilter === 'open') document.getElementById('btn-open').classList.add('active');
+            if (currentFilter === 'gonow') document.getElementById('btn-gonow')?.classList.add('active');
+            if (currentFilter === 'nearby') document.getElementById('btn-nearby')?.classList.add('active');
+            if (currentFilter === 'cheapest') document.getElementById('btn-cheapest')?.classList.add('active');
+            if (currentFilter === 'open') document.getElementById('btn-open')?.classList.add('active');
 
             // If user selected 'nearby', attempt to get a fresh geolocation before rendering so "nearby" is based on current position.
             if (type === 'nearby') {
@@ -444,7 +487,7 @@
                 mapEl.style.display = 'block';
                 btnMap.classList.add('active');
                 if (!mapInitialized) {
-                    map = L.map('map').setView([userLat, userLng], 8);
+                    map = L.map('map').setView([userLat, userLng], 6);
                     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18 }).addTo(map);
                     markersLayer = L.layerGroup().addTo(map);
                     mapInitialized = true;
@@ -470,7 +513,7 @@
             if (bounds && (typeof bounds.isValid === 'function' ? bounds.isValid() : !!bounds)) {
                 if (typeof bounds.pad === 'function') map.fitBounds(bounds.pad(0.2)); else map.fitBounds(bounds);
             } else {
-                map.setView([userLat, userLng], 8);
+                map.setView([userLat, userLng], 6);
             }
         }
 
@@ -501,7 +544,8 @@
             // page size select
             const pageSizeSelect = document.getElementById('page-size-select');
             pageSizeSelect.addEventListener('change', () => {
-                pageSize = parseInt(pageSizeSelect.value, 10) || 20;
+                // pageSize variable used if user selects numeric option; 'all' handled in render
+                pageSize = parseInt(pageSizeSelect.value, 10) || 100;
                 currentPage = 1;
                 renderWashes();
             });
