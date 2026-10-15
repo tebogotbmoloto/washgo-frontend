@@ -273,11 +273,9 @@
                 processed = processed.filter(wash => wash.distance <= 25);
                 processed.sort((a, b) => a.price - b.price || a.distance - b.distance);
             } else if (currentFilter === 'open') {
-                // Filter only those currently open, within reasonable local range (25km), sorted by distance
                 processed = processed.filter(wash => wash.status.isOpen && wash.distance <= 25);
                 processed.sort((a, b) => a.distance - b.distance);
             } else if (currentFilter === 'gonow') {
-                // All SA: Show all provinces sorted strictly by cheapest price first
                 processed.sort((a, b) => a.price - b.price || a.distance - b.distance);
             }
 
