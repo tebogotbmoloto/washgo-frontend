@@ -133,7 +133,7 @@
 
         <!-- Results List -->
         <div id="wash-list">
-            <p style="text-align: center;">Detecting your GPS location across South Africa...</p>
+            <p style="text-align: center;">📍 Acquiring your precise GPS coordinates...</p>
         </div>
 
         <!-- Ad Banner Slot -->
@@ -146,24 +146,24 @@
     <!-- Leaflet JS -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script>
-        // Nationwide South Africa Car Wash Dataset
+        // Comprehensive Dataset including local spots around Roodepoort, Radiokop, Northriding, etc.
         const carWashes = [
+            { name: "Plush Car Wash (Bel Air)", province: "Gauteng", lat: -26.0552, lng: 27.9541, price: 85, rating: "4.7" },
+            { name: "BigF Car Wash (Lifestyle)", province: "Gauteng", lat: -26.0691, lng: 27.9554, price: 90, rating: "4.6" },
+            { name: "Total Rock Cottage Wash", province: "Gauteng", lat: -26.0912, lng: 27.9350, price: 75, rating: "4.5" },
+            { name: "Autowash Northgate", province: "Gauteng", lat: -26.0601, lng: 27.9382, price: 80, rating: "4.7" },
+            { name: "Clearwater Handwash & Spa", province: "Gauteng", lat: -26.1285, lng: 27.9050, price: 70, rating: "4.5" },
             { name: "Sandton Mobile Handwash", province: "Gauteng", lat: -26.1076, lng: 28.0567, price: 80, rating: "4.8" },
+            { name: "Menlyn Eco Wash", province: "Gauteng", lat: -25.7825, lng: 28.2751, price: 75, rating: "4.6" },
             { name: "V&A Waterfront Auto Spa", province: "Western Cape", lat: -33.9036, lng: 18.4205, price: 120, rating: "4.9" },
             { name: "Umhlanga Ridge Car Care", province: "KwaZulu-Natal", lat: -29.7285, lng: 31.0826, price: 90, rating: "4.7" },
-            { name: "Menlyn Eco Wash", province: "Gauteng", lat: -25.7825, lng: 28.2751, price: 75, rating: "4.6" },
-            { name: "Summerstrand Splash", province: "Eastern Cape", lat: -33.9830, lng: 25.6660, price: 70, rating: "4.5" },
-            { name: "Waterfront Polishing", province: "Free State", lat: -29.1187, lng: 26.2246, price: 65, rating: "4.4" },
-            { name: "Nelspruit Riverside Wash", province: "Mpumalanga", lat: -25.4700, lng: 30.9700, price: 70, rating: "4.5" },
-            { name: "Polokwane Express Polish", province: "Limpopo", lat: -23.9045, lng: 29.4688, price: 60, rating: "4.3" },
-            { name: "Rustenburg Platinum Clean", province: "North West", lat: -25.6650, lng: 27.2421, price: 65, rating: "4.4" },
-            { name: "Kimberley Diamond Wash", province: "Northern Cape", lat: -28.7380, lng: 24.7640, price: 60, rating: "4.2" }
+            { name: "Polokwane Express Polish", province: "Limpopo", lat: -23.9045, lng: 29.4688, price: 60, rating: "4.3" }
         ];
 
-        let userLat = -26.2041; // Default fallback: Johannesburg center
-        let userLng = 28.0473;
+        let userLat = null; 
+        let userLng = null;
         let map, mapInitialized = false;
-        let currentFilter = 'nearby'; // Default to nearby
+        let currentFilter = 'nearby'; // Default state is Nearby
 
         function calculateDistance(lat1, lon1, lat2, lon2) {
             const R = 6371; 
@@ -183,10 +183,15 @@
                     userLng = position.coords.longitude;
                     renderWashes();
                 }, error => {
-                    console.warn("GPS Location access denied or unavailable.");
+                    console.warn("GPS Location access denied. Falling back to default region center.");
+                    // Fallback to local coordinates around Northriding/Radiokop area
+                    userLat = -26.0691;
+                    userLng = 27.9554;
                     renderWashes();
-                });
+                }, { enableHighAccuracy: true, timeout: 10000 });
             } else {
+                userLat = -26.0691;
+                userLng = 27.9554;
                 renderWashes();
             }
         }
@@ -199,20 +204,20 @@
                 return { ...wash, distance: dist };
             });
 
-            // Filtering based on active mode
+            // Filtering & sorting logic
             if (currentFilter === 'nearby') {
-                // Strict nearby radius filter (e.g., within 100km) to exclude distant spots like Polokwane
-                processed = processed.filter(wash => wash.distance <= 100);
+                // Restrict to a tight 35km radius so distant places like Polokwane are excluded
+                processed = processed.filter(wash => wash.distance <= 35);
                 processed.sort((a, b) => a.distance - b.distance);
             } else if (currentFilter === 'gonow') {
-                // Show all of South Africa sorted by proximity
+                // Show all of South Africa sorted by distance
                 processed.sort((a, b) => a.distance - b.distance);
             } else if (currentFilter === 'cheapest') {
                 processed.sort((a, b) => a.price - b.price || a.distance - b.distance);
             }
 
             if (processed.length === 0) {
-                listEl.innerHTML = `<p style="text-align: center;">No car washes found within 100km. Click "Go Now (All SA)" to see listings across South Africa.</p>`;
+                listEl.innerHTML = `<p style="text-align: center;">No car washes found within 35km of your location. Click <strong>"Go Now (All SA)"</strong> above to view national listings.</p>`;
                 return;
             }
 
@@ -258,7 +263,7 @@
                 mapEl.style.display = 'block';
                 btnMap.classList.add('active');
                 if (!mapInitialized) {
-                    map = L.map('map').setView([userLat, userLng], 6);
+                    map = L.map('map').setView([userLat, userLng], 12);
                     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
                         maxZoom: 18,
                     }).addTo(map);
@@ -276,7 +281,7 @@
             locations.forEach(wash => {
                 const mapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${wash.lat},${wash.lng}`;
                 L.marker([wash.lat, wash.lng]).addTo(map)
-                  .bindPopup(`<b>${wash.name}</b><br>Province: ${wash.province}<br>Price: R${wash.price}<br><a href="${mapsUrl}" target="_blank">Open in Google Maps</a>`);
+                  .bindPopup(`<b>${wash.name}</b><br>Distance: ${wash.distance.toFixed(1)} km<br>Price: R${wash.price}<br><a href="${mapsUrl}" target="_blank">Open in Google Maps</a>`);
             });
         }
 
