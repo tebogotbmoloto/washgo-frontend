@@ -4,8 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>CarWash Locator South Africa</title>
-    <link rel="manifest" href="./manifest.json">
-    <link rel="apple-touch-icon" href="./icon-192.png">
     <meta name="theme-color" content="#007bff">
     
     <!-- Leaflet CSS -->
@@ -156,7 +154,6 @@
     <!-- Leaflet JS -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script>
-        // Clean, structured dataset with explicit schedules
         const carWashes = [
             { name: "Clearwater Mall 24/7 Express Wash", province: "Gauteng", lat: -26.1285, lng: 27.9050, price: 75, rating: "4.5", closesAt: 24, is24Hours: true },
             { name: "Radiokop Night & Day Auto Spa", province: "Gauteng", lat: -26.1040, lng: 27.9280, price: 70, rating: "4.4", closesAt: 24, is24Hours: true },
@@ -179,9 +176,10 @@
             { name: "Rustenburg Platinum Clean", province: "North West", lat: -25.6650, lng: 27.2421, price: 65, rating: "4.4", closesAt: 20, is24Hours: false }
         ];
 
-        let userLat = null; 
-        let userLng = null;
-        let map, mapInitialized = false;
+        let userLat = -26.1285; 
+        let userLng = 27.9050;
+        let map = null;
+        let mapInitialized = false;
         let currentFilter = 'nearby';
 
         function calculateDistance(lat1, lon1, lat2, lon2) {
@@ -197,44 +195,25 @@
 
         function getBusinessStatus(wash) {
             const currentHour = new Date().getHours();
-            
             if (wash.is24Hours) {
                 return { isOpen: true, text: "🟢 Open 24 Hours", class: "status-open" };
             }
-
             const openingHour = 7; 
             if (currentHour >= openingHour && currentHour < wash.closesAt) {
-                return { isOpen: true, text: `🟢 Open Now (Closes at ${wash.closesAt}:00)`, class: "status-open" };
+                return { isOpen: true, text: "🟢 Open Now (Closes at " + wash.closesAt + ":00)", class: "status-open" };
             } else {
-                return { isOpen: false, text: `🔴 Closed (Closed at ${wash.closesAt}:00)`, class: "status-closed" };
-            }
-        }
-
-        function initApp() {
-            if (navigator.geolocation) {
-                navigator.geolocation.getCurrentPosition(position => {
-                    userLat = position.coords.latitude;
-                    userLng = position.coords.longitude;
-                    renderWashes();
-                }, error => {
-                    userLat = -26.1285; 
-                    userLng = 27.9050;
-                    renderWashes();
-                }, { enableHighAccuracy: true, timeout: 10000 });
-            } else {
-                userLat = -26.1285;
-                userLng = 27.9050;
-                renderWashes();
+                return { isOpen: false, text: "🔴 Closed (Closed at " + wash.closesAt + ":00)", class: "status-closed" };
             }
         }
 
         function renderWashes() {
             const listEl = document.getElementById('wash-list');
+            if (!listEl) return;
             
             let processed = carWashes.map(wash => {
                 let dist = calculateDistance(userLat, userLng, wash.lat, wash.lng);
                 let status = getBusinessStatus(wash);
-                return { ...wash, distance: dist, status: status };
+                return Object.assign({}, wash, { distance: dist, status: status });
             });
 
             if (currentFilter === 'nearby') {
@@ -251,29 +230,29 @@
             }
 
             if (processed.length === 0) {
-                listEl.innerHTML = `<p style="text-align: center;">No car washes found matching this filter criteria right now.</p>`;
+                listEl.innerHTML = '<p style="text-align: center;">No car washes found matching this filter criteria right now.</p>';
                 return;
             }
 
             listEl.innerHTML = processed.map(wash => {
-                const mapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${wash.lat},${wash.lng}`;
-                return `
-                    <div class="wash-card">
-                        <div class="wash-info">
-                            <h3>${wash.name}</h3>
-                            <p>📍 Province: <strong>${wash.province}</strong></p>
-                            <p>🚗 Distance: <strong>${wash.distance.toFixed(1)} km away</strong></p>
-                            <p>⭐ Rating: ${wash.rating} / 5.0 | <span class="status-badge ${wash.status.class}">${wash.status.text}</span></p>
-                        </div>
-                        <div class="card-actions">
-                            <span class="badge">R${wash.price}</span>
-                            <a href="${mapsUrl}" target="_blank" class="go-btn">🚗 Go Here</a>
-                        </div>
-                    </div>
-                `;
+                const mapsUrl = "https://www.google.com/maps/dir/?api=1&destination=" + wash.lat + "," + wash.lng;
+                return '<div class="wash-card">' +
+                    '<div class="wash-info">' +
+                        '<h3>' + wash.name + '</h3>' +
+                        '<p>📍 Province: <strong>' + wash.province + '</strong></p>' +
+                        '<p>🚗 Distance: <strong>' + wash.distance.toFixed(1) + ' km away</strong></p>' +
+                        '<p>⭐ Rating: ' + wash.rating + ' / 5.0 | <span class="status-badge ' + wash.status.class + '">' + wash.status.text + '</span></p>' +
+                    '</div>' +
+                    '<div class="card-actions">' +
+                        '<span class="badge">R' + wash.price + '</span>' +
+                        '<a href="' + mapsUrl + '" target="_blank" class="go-btn">🚗 Go Here</a>' +
+                    '</div>' +
+                '</div>';
             }).join('');
 
-            if(mapInitialized) updateMapMarkers(processed);
+            if (mapInitialized) {
+                updateMapMarkers(processed);
+            }
         }
 
         function filterList(type) {
@@ -284,10 +263,10 @@
             document.getElementById('btn-cheapest').classList.remove('active');
             document.getElementById('btn-open').classList.remove('active');
 
-            if(currentFilter === 'gonow') document.getElementById('btn-gonow').classList.add('active');
-            if(currentFilter === 'nearby') document.getElementById('btn-nearby').classList.add('active');
-            if(currentFilter === 'cheapest') document.getElementById('btn-cheapest').classList.add('active');
-            if(currentFilter === 'open') document.getElementById('btn-open').classList.add('active');
+            if (currentFilter === 'gonow') document.getElementById('btn-gonow').classList.add('active');
+            if (currentFilter === 'nearby') document.getElementById('btn-nearby').classList.add('active');
+            if (currentFilter === 'cheapest') document.getElementById('btn-cheapest').classList.add('active');
+            if (currentFilter === 'open') document.getElementById('btn-open').classList.add('active');
             
             renderWashes();
         }
@@ -313,15 +292,27 @@
         }
 
         function updateMapMarkers(locations) {
-            if(!map) return;
+            if (!map) return;
             locations.forEach(wash => {
-                const mapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${wash.lat},${wash.lng}`;
+                const mapsUrl = "https://www.google.com/maps/dir/?api=1&destination=" + wash.lat + "," + wash.lng;
                 L.marker([wash.lat, wash.lng]).addTo(map)
-                  .bindPopup(`<b>${wash.name}</b><br>Distance: ${wash.distance.toFixed(1)} km<br>Price: R${wash.price}<br><a href="${mapsUrl}" target="_blank">Open in Google Maps</a>`);
+                  .bindPopup("<b>" + wash.name + "</b><br>Distance: " + wash.distance.toFixed(1) + " km<br>Price: R" + wash.price + "<br><a href='" + mapsUrl + "' target='_blank'>Open in Google Maps</a>");
             });
         }
 
-        window.onload = initApp;
+        document.addEventListener("DOMContentLoaded", function() {
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(position => {
+                    userLat = position.coords.latitude;
+                    userLng = position.coords.longitude;
+                    renderWashes();
+                }, error => {
+                    renderWashes(); // Uses default fallback coordinates smoothly
+                }, { enableHighAccuracy: true, timeout: 8000 });
+            } else {
+                renderWashes();
+            }
+        });
     </script>
 </body>
 </html>
