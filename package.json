@@ -1,70 +1,14 @@
-# WashGo monetization + promotion backend
-
-This repo now includes:
-- a monetization panel in `index.html`
-- a promote button on each wash card
-- a small Stripe Checkout backend example in `server.js`
-
-## Quick start
-
-1. Install dependencies:
-
-```bash
-npm install
-```
-
-2. Set your Stripe secret key and public URL:
-
-```bash
-export STRIPE_SECRET_KEY="sk_live_..."
-export PUBLIC_URL="https://your-frontend-domain.com"
-```
-
-3. Start the backend:
-
-```bash
-npm start
-```
-
-4. In the frontend, point the app to your backend by setting this in the browser before the page loads:
-
-```html
-<script>
-  window.WASHGO_PROMOTION_API_BASE = 'https://your-backend-domain.com';
-</script>
-```
-
-If you host the frontend and backend on the same domain, you can leave the default `fetch('/create-promotion')` behavior as-is.
-
-## Files added
-
-- `server.js` — Express + Stripe backend example
-- `index.html` — monetization UI and promote flow
-- `package.json` — starter scripts and dependencies
-
-## Payment flow
-
-- visitor clicks `Promote`
-- app posts to `/create-promotion`
-- backend creates a Stripe Checkout Session
-- user is redirected to Stripe
-- on success, your app can read the `session_id` and mark the listing as promoted
-
-## Recommended production follow-up
-
-- add a database to persist promoted listings and expiry dates
-- add a Stripe webhook to confirm successful payments and activate promotions
-- add an admin dashboard to review and manage promotion status
-- swap placeholder donation links and ad slot with real links / AdSense publisher info
-
-## Deployment options
-
-- Render: deploy the Node app as a web service
-- Railway: deploy directly from GitHub
-- Heroku: deploy the app with `npm start`
-- VPS / Docker: run `node server.js`
-
-## Notes
-
-- Stripe charges in cents, so example pricing is set as `R50 = 5000`, `R90 = 9000`, `R150 = 15000` in ZAR.
-- Replace `YOUR_USERNAME` and `YOUR_PAYPAL` in `index.html` with your real profiles before going live.
+{
+  "name": "washgo-promotions",
+  "version": "0.1.0",
+  "description": "Small backend for WashGo promoted listings (Stripe Checkout + webhook)",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "stripe": "^12.0.0"
+  }
+}
