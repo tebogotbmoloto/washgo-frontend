@@ -38,11 +38,12 @@
         .controls {
             display: flex;
             gap: 10px;
-            justify-content: center;
+            justify-content: space-between;
+            align-items: center;
             margin-bottom: 1rem;
             flex-wrap: wrap;
         }
-        .controls .search-wrap { display:flex; gap:8px; align-items:center; }
+        .controls .left, .controls .right { display:flex; gap:8px; align-items:center; }
         .controls input[type="search"] {
             padding: 8px 10px;
             border-radius: 6px;
@@ -132,6 +133,23 @@
         .pager { display:flex; gap:8px; justify-content:center; align-items:center; margin-top:12px; }
         .pager button { padding:6px 10px; }
         .small-muted { color:#666; font-size:0.9rem; }
+
+        /* Sticky pagination (stays visible while scrolling within container) */
+        .pagination-sticky {
+            position: sticky;
+            bottom: 0;
+            background: rgba(255,255,255,0.95);
+            padding: 8px 0;
+            z-index: 50;
+            border-top: 1px solid #eee;
+        }
+
+        /* small responsive tweaks */
+        @media (max-width: 700px) {
+            .controls { flex-direction: column; align-items: stretch; gap: 8px; }
+            .controls .left, .controls .right { justify-content: center; }
+            .controls input[type="search"]{ width:100%; }
+        }
     </style>
 </head>
 <body>
@@ -144,15 +162,20 @@
     <div class="container">
         <!-- Interactive Controls -->
         <div class="controls">
-            <div>
+            <div class="left">
                 <button id="btn-gonow" onclick="filterList('gonow')">⚡ Go Now (All SA)</button>
                 <button id="btn-nearby" class="active" onclick="filterList('nearby')">📍 Nearby</button>
                 <button id="btn-cheapest" onclick="filterList('cheapest')">💰 Cheapest Nearby</button>
                 <button id="btn-open" onclick="filterList('open')">🟢 Open First</button>
                 <button id="btn-map" onclick="toggleMap()">🗺️ Map Option</button>
             </div>
-            <div class="search-wrap">
+            <div class="right">
                 <input id="search-input" type="search" placeholder="Search by name or province" />
+                <button id="clear-search">Clear</button>
+                <label class="small-muted">Province:</label>
+                <select id="province-filter">
+                    <option value="all">All</option>
+                </select>
                 <label class="small-muted">Page size:</label>
                 <select id="page-size-select">
                     <option value="10">10</option>
@@ -171,8 +194,8 @@
             <p style="text-align: center;">📍 Acquiring your precise GPS coordinates...</p>
         </div>
 
-        <!-- Pagination Controls -->
-        <div class="pager" id="pagination-controls" style="display:none;">
+        <!-- Pagination Controls (sticky) -->
+        <div class="pager pagination-sticky" id="pagination-controls" style="display:none;">
             <button id="prev-page">◀ Prev</button>
             <span id="page-info">1 / 1</span>
             <button id="next-page">Next ▶</button>
@@ -208,10 +231,12 @@
                 if (Array.isArray(json) && json.length > 0) {
                     carWashes = json;
                     console.info('Loaded', json.length, 'car washes from carwashes.json');
+                    populateProvinceFilter();
                     renderWashes();
                 }
             }).catch(_ => {
-                // continue with inline sample
+                populateProvinceFilter();
+                renderWashes();
             });
         })();
 
@@ -258,6 +283,13 @@
             return map;
         }
 
+        function populateProvinceFilter() {
+            const sel = document.getElementById('province-filter');
+            const provinces = Array.from(new Set(carWashes.map(c => c.province || 'Unknown'))).sort();
+            // clear existing except 'all'
+            sel.innerHTML = '<option value="all">All</option>' + provinces.map(p => '<option value="'+encodeURIComponent(p)+'">'+p+'</option>').join('');
+        }
+
         function renderWashes() {
             const listEl = document.getElementById('wash-list');
             const pager = document.getElementById('pagination-controls');
@@ -281,6 +313,14 @@
                     if ((a.province||'') === (b.province||'')) return (a.name||'').localeCompare(b.name||'');
                     return (a.province||'').localeCompare(b.province||'');
                 });
+            }
+
+            // province filter
+            const provinceSel = document.getElementById('province-filter');
+            const provVal = provinceSel ? provinceSel.value : 'all';
+            if (provVal && provVal !== 'all') {
+                const decoded = decodeURIComponent(provVal);
+                processedFull = processedFull.filter(w => (w.province || 'Unknown') === decoded);
             }
 
             // search
@@ -398,6 +438,9 @@
 
         // event bindings
         document.addEventListener('DOMContentLoaded', () => {
+            // populate province filter from data (if not loaded via fetch yet)
+            populateProvinceFilter();
+
             // search input
             const searchInput = document.getElementById('search-input');
             let debounceTimer = null;
@@ -405,6 +448,17 @@
                 clearTimeout(debounceTimer);
                 debounceTimer = setTimeout(() => { currentPage = 1; renderWashes(); }, 250);
             });
+
+            // clear search button
+            document.getElementById('clear-search').addEventListener('click', () => {
+                searchInput.value = '';
+                document.getElementById('province-filter').value = 'all';
+                currentPage = 1;
+                renderWashes();
+            });
+
+            // province select
+            document.getElementById('province-filter').addEventListener('change', () => { currentPage = 1; renderWashes(); });
 
             // page size select
             const pageSizeSelect = document.getElementById('page-size-select');
