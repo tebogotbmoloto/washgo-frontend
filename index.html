@@ -122,8 +122,8 @@
     <div class="container">
         <!-- Interactive Controls -->
         <div class="controls">
-            <button id="btn-gonow" onclick="filterList('gonow')">⚡ Go Now (Nearest)</button>
-            <button id="btn-nearby" onclick="filterList('nearby')">📍 Nearby</button>
+            <button id="btn-gonow" onclick="filterList('gonow')">⚡ Go Now (All SA)</button>
+            <button id="btn-nearby" class="active" onclick="filterList('nearby')">📍 Nearby</button>
             <button id="btn-cheapest" onclick="filterList('cheapest')">💰 Cheapest</button>
             <button id="btn-map" onclick="toggleMap()">🗺️ Map Option</button>
         </div>
@@ -163,7 +163,7 @@
         let userLat = -26.2041; // Default fallback: Johannesburg center
         let userLng = 28.0473;
         let map, mapInitialized = false;
-        let currentFilter = 'gonow';
+        let currentFilter = 'nearby'; // Default state is set to nearby
 
         function calculateDistance(lat1, lon1, lat2, lon2) {
             const R = 6371; 
@@ -200,10 +200,12 @@
             });
 
             // Sorting logic based on active filter
-            if (currentFilter === 'gonow' || currentFilter === 'nearby') {
+            if (currentFilter === 'nearby') {
+                processed.sort((a, b) => a.distance - b.distance);
+            } else if (currentFilter === 'gonow') {
+                // Keep original national order or sort by general proximity as fallback
                 processed.sort((a, b) => a.distance - b.distance);
             } else if (currentFilter === 'cheapest') {
-                // Sort by cheapest price first, then nearest distance for ties
                 processed.sort((a, b) => a.price - b.price || a.distance - b.distance);
             }
 
@@ -229,12 +231,7 @@
         }
 
         function filterList(type) {
-            // Toggle off if clicking the same filter twice
-            if (currentFilter === type) {
-                currentFilter = 'gonow'; // default back
-            } else {
-                currentFilter = type;
-            }
+            currentFilter = type;
 
             document.getElementById('btn-gonow').classList.remove('active');
             document.getElementById('btn-nearby').classList.remove('active');
