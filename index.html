@@ -190,6 +190,7 @@
                     <option value="100" selected>100</option>
                     <option value="all">All</option>
                 </select>
+                <label title="Fetch live POIs from OpenStreetMap (Overpass). When enabled, the app queries OSM for car_wash POIs; if disabled the app prefers carwashes.json in the repo."><input id="live-toggle" type="checkbox" checked /> Live OSM</label>
             </div>
         </div>
 
@@ -253,6 +254,9 @@
 
         const NEARBY_RADIUS_KM = 25;
         const POLL_INTERVAL_MS = 60 * 1000; // 60s
+
+        // When true, app preferentially fetches live OSM (Overpass) POIs at startup and refresh.
+        let liveMode = true;
 
         function calculateDistance(lat1, lon1, lat2, lon2) {
             const R = 6371;
@@ -330,7 +334,9 @@ area["ISO3166-1"="ZA"]->.country;
 out center tags;
 `;
                 const url = 'https://overpass-api.de/api/interpreter';
-                const res = await fetch(url, { method: 'POST', body: q, headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
+                // Overpass expects the query via POST parameter 'data'
+                const body = 'data=' + encodeURIComponent(q);
+                const res = await fetch(url, { method: 'POST', body: body, headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' } });
                 if (!res.ok) throw new Error('Overpass HTTP ' + res.status);
                 const data = await res.json();
                 if (!data || !Array.isArray(data.elements)) throw new Error('Invalid Overpass response');
@@ -340,27 +346,31 @@ out center tags;
                     const tags = el.tags || {};
                     const lat = el.lat || (el.center && el.center.lat) || null;
                     const lon = el.lon || (el.center && el.center.lon) || null;
+                    // try to parse a numeric closesAt from opening_hours (best-effort)
+                    const openingTag = tags['opening_hours'] || '';
+                    let closesAt = null;
+                    let is24 = false;
+                    if (openingTag) {
+                        if (/24\/?7|24h/i.test(openingTag)) {
+                            is24 = true;
+                            closesAt = 24;
+                        } else {
+                            const m = openingTag.match(/(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})/);
+                            if (m) {
+                                closesAt = parseInt(m[3], 10);
+                            }
+                        }
+                    }
+
                     return {
-                        name: tags.name || tags.operator || 'Unnamed',
+                        name: tags.name || tags.operator || (tags.ref ? ("Car Wash " + tags.ref) : 'Unnamed'),
                         province: tags['addr:province'] || tags['is_in:province'] || 'Unknown',
                         lat: lat,
                         lng: lon,
-                        price: tags['fee'] ? Number(tags['fee']) : null,
-                        rating: tags['rating'] || null,
-                        // naive hours: check "opening_hours" tag for 24/7
-                        closesAt: (function(){
-                            const oh = tags['opening_hours'] || '';
-                            if (!oh) return null;
-                            if (/24\/?7|24h/i.test(oh)) return 24;
-                            // try to extract pattern like 07:00-19:00 or 7:00-19:00
-                            const m = oh.match(/(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})/);
-                            if (m) {
-                                const closeHour = parseInt(m[3], 10);
-                                return closeHour;
-                            }
-                            return null;
-                        })(),
-                        is24Hours: (/24\/?7|24h/i).test((el.tags||{})['opening_hours'] || '')
+                        price: null,
+                        rating: tags['stars'] || tags['rating'] || null,
+                        closesAt: closesAt,
+                        is24Hours: is24
                     };
                 }).filter(x => x.lat != null && x.lng != null);
 
@@ -453,20 +463,42 @@ out center tags;
         async function manualFetchAndApply() {
             const statusEl = document.getElementById('data-status');
             const lastUpdatedEl = document.getElementById('last-updated');
-            if (statusEl) statusEl.innerText = 'Fetching carwashes.json…';
+            if (statusEl) statusEl.innerText = 'Fetching latest POIs…';
 
-            // Prefer carwashes.json (repo) because it's curated and stable; fall back to OSM fetch if json missing
+            if (liveMode) {
+                if (statusEl) statusEl.innerText = 'Fetching live data from OSM (Overpass)…';
+                const osmList = await fetchOSMCarWashes();
+                if (osmList && osmList.length > 0) {
+                    const changed = applyDiffAndUpdate(osmList);
+                    if (!changed) {
+                        if (statusEl) statusEl.innerText = 'No changes found from OSM — still ' + carWashes.length + ' items';
+                        if (lastUpdatedEl) lastUpdatedEl.innerText = 'Last checked: ' + (new Date()).toLocaleTimeString();
+                    }
+                } else {
+                    if (statusEl) statusEl.innerText = 'OSM fetch failed — trying repo carwashes.json as fallback…';
+                    const json = await fetchCarWashesOnce(true);
+                    if (json && Array.isArray(json) && json.length > 0) {
+                        const changed = applyDiffAndUpdate(json);
+                        if (!changed) if (statusEl) statusEl.innerText = 'No changes found — still ' + carWashes.length + ' items';
+                    } else {
+                        if (statusEl) statusEl.innerText = 'Unable to fetch carwashes.json or OSM data; using existing data (' + carWashes.length + ' items)';
+                    }
+                }
+                return;
+            }
+
+            // non-live mode: prefer curated carwashes.json
             const json = await fetchCarWashesOnce(true);
             if (json && Array.isArray(json) && json.length > 0) {
                 const changed = applyDiffAndUpdate(json);
                 if (!changed) {
                     if (statusEl) statusEl.innerText = 'No changes found — still ' + carWashes.length + ' items';
+                    if (lastUpdatedEl) lastUpdatedEl.innerText = 'Last checked: ' + (new Date()).toLocaleTimeString();
                 }
-                if (lastUpdatedEl && !changed) lastUpdatedEl.innerText = 'Last checked: ' + (new Date()).toLocaleTimeString();
                 return;
             }
 
-            // fallback to Overpass (OSM) live fetch
+            // fallback to OSM if curated file missing
             if (statusEl) statusEl.innerText = 'carwashes.json not available — querying OSM (this may take a while)…';
             const osmList = await fetchOSMCarWashes();
             if (osmList && osmList.length > 0) {
@@ -483,22 +515,45 @@ out center tags;
             const statusEl = document.getElementById('data-status');
             const lastUpdatedEl = document.getElementById('last-updated');
 
-            // Try repo JSON first (preferred for curated data)
-            const json = await fetchCarWashesOnce(true);
-            if (json && json.length > 0) {
-                carWashes = json;
-                if (statusEl) statusEl.innerText = 'Loaded ' + json.length + ' car washes from carwashes.json (curated)';
-                if (lastUpdatedEl) lastUpdatedEl.innerText = 'Last updated: ' + (new Date()).toLocaleString();
-            } else {
-                // If not found or empty, try Overpass OSM live fetch
-                if (statusEl) statusEl.innerText = 'carwashes.json missing — querying OSM for car_wash POIs (this may take a while)…';
+            // Determine liveMode from checkbox if present
+            const liveToggle = document.getElementById('live-toggle');
+            if (liveToggle) liveMode = liveToggle.checked;
+
+            if (liveMode) {
+                if (statusEl) statusEl.innerText = 'Fetching live data from OSM (Overpass) — may take some seconds…';
                 const osm = await fetchOSMCarWashes();
                 if (osm && osm.length > 0) {
                     carWashes = osm;
-                    if (statusEl) statusEl.innerText = 'Loaded ' + osm.length + ' car washes from OSM (Overpass API)';
+                    if (statusEl) statusEl.innerText = 'Loaded ' + osm.length + ' car washes from OSM (Overpass)';
                     if (lastUpdatedEl) lastUpdatedEl.innerText = 'Last updated: ' + (new Date()).toLocaleString();
                 } else {
-                    if (statusEl) statusEl.innerText = 'Using embedded sample data (' + carWashes.length + ' items). carwashes.json not found and OSM fetch failed.';
+                    // fallback to curated file if OSM fails
+                    const json = await fetchCarWashesOnce(true);
+                    if (json && json.length > 0) {
+                        carWashes = json;
+                        if (statusEl) statusEl.innerText = 'Loaded ' + json.length + ' car washes from carwashes.json (fallback)';
+                        if (lastUpdatedEl) lastUpdatedEl.innerText = 'Last updated: ' + (new Date()).toLocaleString();
+                    } else {
+                        if (statusEl) statusEl.innerText = 'Using embedded sample data: OSM and carwashes.json failed.';
+                    }
+                }
+            } else {
+                // prefer curated carwashes.json
+                const json = await fetchCarWashesOnce(true);
+                if (json && json.length > 0) {
+                    carWashes = json;
+                    if (statusEl) statusEl.innerText = 'Loaded ' + json.length + ' car washes from carwashes.json (curated)';
+                    if (lastUpdatedEl) lastUpdatedEl.innerText = 'Last updated: ' + (new Date()).toLocaleString();
+                } else {
+                    if (statusEl) statusEl.innerText = 'carwashes.json not found — enabling OSM fallback';
+                    const osm = await fetchOSMCarWashes();
+                    if (osm && osm.length > 0) {
+                        carWashes = osm;
+                        if (statusEl) statusEl.innerText = 'Loaded ' + osm.length + ' car washes from OSM (Overpass)';
+                        if (lastUpdatedEl) lastUpdatedEl.innerText = 'Last updated: ' + (new Date()).toLocaleString();
+                    } else {
+                        if (statusEl) statusEl.innerText = 'Using embedded sample data: OSM and carwashes.json failed.';
+                    }
                 }
             }
 
@@ -515,10 +570,18 @@ out center tags;
                 await manualFetchAndApply();
             }, POLL_INTERVAL_MS);
 
-            // bind manual refresh button
+            // bind manual refresh button and live toggle
             document.getElementById('manual-refresh').addEventListener('click', () => {
                 manualFetchAndApply();
             });
+            const liveToggle = document.getElementById('live-toggle');
+            if (liveToggle) {
+                liveToggle.addEventListener('change', () => {
+                    liveMode = liveToggle.checked;
+                    // fetch immediately when toggled
+                    manualFetchAndApply();
+                });
+            }
         }
 
         // Request fresh geolocation then render (used when user clicks 'Nearby')
@@ -745,6 +808,12 @@ out center tags;
             // pager buttons
             document.getElementById('prev-page').addEventListener('click', () => { if (currentPage>1) { currentPage--; renderWashes(); } });
             document.getElementById('next-page').addEventListener('click', () => { currentPage++; renderWashes(); });
+
+            // bind live-toggle initial value
+            const liveToggle = document.getElementById('live-toggle');
+            if (liveToggle) {
+                liveMode = liveToggle.checked;
+            }
 
             // geolocation then initial render (small timeout to allow fetch)
             setTimeout(() => {
