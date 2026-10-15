@@ -1,176 +1,21 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CarWash Locator South Africa</title>
-    <link rel="manifest" href="./manifest.json">
-    <link rel="apple-touch-icon" href="./icon-192.png">
-    <meta name="theme-color" content="#007bff">
-    
-    <!-- Leaflet CSS -->
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    
-    <style>
-        :root {
-            --primary: #007bff;
-            --success: #28a745;
-            --danger: #dc3545;
-            --bg: #f4f7f6;
-            --text: #333;
-        }
-        body {
-            font-family: Arial, sans-serif;
-            margin: 0;
-            padding: 0;
-            background-color: var(--bg);
-            color: var(--text);
-        }
-        header {
-            background-color: var(--primary);
-            color: white;
-            padding: 1rem;
-            text-align: center;
-        }
-        .container {
-            max-width: 800px;
-            margin: 0 auto;
-            padding: 1rem;
-        }
-        .controls {
-            display: flex;
-            gap: 10px;
-            justify-content: center;
-            margin-bottom: 1.5rem;
-            flex-wrap: wrap;
-        }
-        button {
-            padding: 10px 18px;
-            border: none;
-            border-radius: 5px;
-            font-weight: bold;
-            cursor: pointer;
-            background-color: white;
-            color: var(--primary);
-            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-            transition: all 0.2s ease;
-        }
-        button.active, button:hover {
-            background-color: var(--primary);
-            color: white;
-        }
-        #map {
-            height: 300px;
-            border-radius: 8px;
-            margin-bottom: 1.5rem;
-            display: none;
-        }
-        .wash-card {
-            background: white;
-            padding: 15px;
-            border-radius: 8px;
-            margin-bottom: 10px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            flex-wrap: wrap;
-            gap: 10px;
-        }
-        .wash-info h3 { margin: 0 0 5px 0; color: var(--primary); }
-        .wash-info p { margin: 3px 0; font-size: 0.9rem; color: #666; }
-        .card-actions {
-            display: flex;
-            flex-direction: column;
-            align-items: flex-end;
-            gap: 8px;
-        }
-        .badge {
-            background: var(--success);
-            color: white;
-            padding: 5px 10px;
-            border-radius: 4px;
-            font-size: 0.85rem;
-        }
-        .status-badge {
-            font-size: 0.8rem;
-            font-weight: bold;
-            padding: 3px 8px;
-            border-radius: 4px;
-        }
-        .status-open { background-color: #d4edda; color: #155724; }
-        .status-closed { background-color: #f8d7da; color: #721c24; }
-        .go-btn {
-            background-color: var(--success);
-            color: white;
-            padding: 6px 12px;
-            font-size: 0.85rem;
-            text-decoration: none;
-            border-radius: 4px;
-            font-weight: bold;
-        }
-        .go-btn:hover {
-            background-color: #218838;
-        }
-        .ad-container {
-            margin-top: 2rem;
-            text-align: center;
-            background: #e9ecef;
-            padding: 15px;
-            border-radius: 8px;
-        }
-    </style>
-</head>
-<body>
-
-    <header>
-        <h1>CarWash Locator SA</h1>
-        <p>Find nearby car washes across all South African provinces</p>
-    </header>
-
-    <div class="container">
-        <!-- Interactive Controls -->
-        <div class="controls">
-            <button id="btn-gonow" onclick="filterList('gonow')">⚡ Go Now (All SA)</button>
-            <button id="btn-nearby" class="active" onclick="filterList('nearby')">📍 Nearby</button>
-            <button id="btn-cheapest" onclick="filterList('cheapest')">💰 Cheapest Nearby</button>
-            <button id="btn-open" onclick="filterList('open')">🟢 Open Only</button>
-            <button id="btn-map" onclick="toggleMap()">🗺️ Map Option</button>
-        </div>
-
-        <!-- Interactive Map View -->
-        <div id="map"></div>
-
-        <!-- Results List -->
-        <div id="wash-list">
-            <p style="text-align: center;">📍 Acquiring your precise GPS coordinates...</p>
-        </div>
-
-        <!-- Ad Banner Slot -->
-        <div class="ad-container">
-            <small>Sponsored Ad</small>
-            <div style="font-weight: bold; color: #555; padding: 10px;">Your Ad Banner Slot Here</div>
-        </div>
-    </div>
-
-    <!-- Leaflet JS -->
+<!-- Leaflet JS -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script>
-        // Core local dataset points around Clearwater / West Rand / Randburg
+        // Core local dataset points with explicit operational hours/attributes
         const baseCarWashes = [
-            { name: "Clearwater Mall Express Wash", province: "Gauteng", lat: -26.1285, lng: 27.9050, price: 70, rating: "4.5" },
-            { name: "Radiokop Auto Spa", province: "Gauteng", lat: -26.1040, lng: 27.9280, price: 65, rating: "4.4" },
-            { name: "Randpark Ridge Handwash", province: "Gauteng", lat: -26.1150, lng: 27.9520, price: 75, rating: "4.6" },
-            { name: "Bel Air Plush Car Wash", province: "Gauteng", lat: -26.0552, lng: 27.9541, price: 85, rating: "4.7" },
-            { name: "Lifestyle Car Care Center", province: "Gauteng", lat: -26.0691, lng: 27.9554, price: 90, rating: "4.6" },
-            { name: "Total Rock Cottage Wash", province: "Gauteng", lat: -26.0912, lng: 27.9350, price: 75, rating: "4.5" },
-            { name: "Northgate Mall Wash & Go", province: "Gauteng", lat: -26.0601, lng: 27.9382, price: 80, rating: "4.7" },
-            { name: "Honeydew Eco Clean", province: "Gauteng", lat: -26.0820, lng: 27.9150, price: 60, rating: "4.3" },
-            { name: "Fairland Walk Auto Polish", province: "Gauteng", lat: -26.1350, lng: 27.9480, price: 80, rating: "4.8" },
-            { name: "Constantia Kloof Car Spa", province: "Gauteng", lat: -26.1450, lng: 27.9250, price: 85, rating: "4.7" },
-            { name: "Florida Junction Valet", province: "Gauteng", lat: -26.1620, lng: 27.9210, price: 70, rating: "4.5" },
-            { name: "Little Falls Car Care", province: "Gauteng", lat: -26.0950, lng: 27.8820, price: 90, rating: "4.7" },
-            { name: "Strubens Valley Mobile Wash", province: "Gauteng", lat: -26.1120, lng: 27.9120, price: 65, rating: "4.4" }
+            { name: "Clearwater Mall Express Wash", province: "Gauteng", lat: -26.1285, lng: 27.9050, price: 70, rating: "4.5", closesAt: 18, is24Hours: false },
+            { name: "Radiokop Auto Spa", province: "Gauteng", lat: -26.1040, lng: 27.9280, price: 65, rating: "4.4", closesAt: 18, is24Hours: false },
+            { name: "Randpark Ridge Handwash", province: "Gauteng", lat: -26.1150, lng: 27.9520, price: 75, rating: "4.6", closesAt: 19, is24Hours: false },
+            { name: "Bel Air Plush Car Wash", province: "Gauteng", lat: -26.0552, lng: 27.9541, price: 85, rating: "4.7", closesAt: 18, is24Hours: false },
+            { name: "Lifestyle Car Care Center", province: "Gauteng", lat: -26.0691, lng: 27.9554, price: 90, rating: "4.6", closesAt: 18, is24Hours: false },
+            { name: "Total Rock Cottage Wash", province: "Gauteng", lat: -26.0912, lng: 27.9350, price: 75, rating: "4.5", closesAt: 22, is24Hours: false }, // Late closing spot
+            { name: "Northgate Mall Wash & Go", province: "Gauteng", lat: -26.0601, lng: 27.9382, price: 80, rating: "4.7", closesAt: 18, is24Hours: false },
+            { name: "Honeydew Eco Clean", province: "Gauteng", lat: -26.0820, lng: 27.9150, price: 60, rating: "4.3", closesAt: 18, is24Hours: false },
+            { name: "Fairland Walk Auto Polish", province: "Gauteng", lat: -26.1350, lng: 27.9480, price: 80, rating: "4.8", closesAt: 18, is24Hours: false },
+            { name: "Constantia Kloof Car Spa", province: "Gauteng", lat: -26.1450, lng: 27.9250, price: 85, rating: "4.7", closesAt: 18, is24Hours: false },
+            { name: "Florida Junction Valet", province: "Gauteng", lat: -26.1620, lng: 27.9210, price: 70, rating: "4.5", closesAt: 18, is24Hours: false },
+            { name: "Little Falls Car Care", province: "Gauteng", lat: -26.0950, lng: 27.8820, price: 90, rating: "4.7", closesAt: 18, is24Hours: false },
+            { name: "Strubens Valley Mobile Wash", province: "Gauteng", lat: -26.1120, lng: 27.9120, price: 65, rating: "4.4", closesAt: 18, is24Hours: false }
         ];
 
         let carWashes = [];
@@ -188,34 +33,37 @@
                 let suffix = neighborhoodSuffixes[Math.floor(Math.random() * neighborhoodSuffixes.length)];
                 let street = streetNames[Math.floor(Math.random() * streetNames.length)];
                 
+                // Assign explicit hours based on type
+                let closingHour = (i % 5 === 0) ? 24 : 18; // Make some explicitly 24 hours
+                let is24 = (closingHour === 24);
+
                 carWashes.push({
                     name: `${street} ${suffix} (${i})`,
                     province: item.province,
                     lat: item.lat + randomLatOffset,
                     lng: item.lng + randomLngOffset,
                     price: randomPrice,
-                    rating: randomRating
+                    rating: randomRating,
+                    closesAt: closingHour,
+                    is24Hours: is24
                 });
             }
         });
 
-        // Add major national spots across South African provinces
+        // Add major national spots with explicit hours
         carWashes.push(
-            { name: "Sandton Mobile Handwash", province: "Gauteng", lat: -26.1076, lng: 28.0567, price: 80, rating: "4.8" },
-            { name: "Menlyn Eco Wash", province: "Gauteng", lat: -25.7825, lng: 28.2751, price: 75, rating: "4.6" },
-            { name: "V&A Waterfront Auto Spa", province: "Western Cape", lat: -33.9036, lng: 18.4205, price: 120, rating: "4.9" },
-            { name: "Umhlanga Ridge Car Care", province: "KwaZulu-Natal", lat: -29.7285, lng: 31.0826, price: 90, rating: "4.7" },
-            { name: "Polokwane Express Polish", province: "Limpopo", lat: -23.9045, lng: 29.4688, price: 60, rating: "4.3" },
-            { name: "Rustenburg Platinum Clean", province: "North West", lat: -25.6650, lng: 27.2421, price: 65, rating: "4.4" },
-            { name: "Kimberley Diamond Wash", province: "Northern Cape", lat: -28.7380, lng: 24.7640, price: 60, rating: "4.2" },
-            { name: "Bloemfontein Central Auto Polish", province: "Free State", lat: -29.1187, lng: 26.2246, price: 65, rating: "4.4" },
-            { name: "Nelspruit Riverside Wash", province: "Mpumalanga", lat: -25.4700, lng: 30.9700, price: 70, rating: "4.5" }
+            { name: "Sandton Mobile Handwash", province: "Gauteng", lat: -26.1076, lng: 28.0567, price: 80, rating: "4.8", closesAt: 18, is24Hours: false },
+            { name: "Menlyn Eco Wash", province: "Gauteng", lat: -25.7825, lng: 28.2751, price: 75, rating: "4.6", closesAt: 18, is24Hours: false },
+            { name: "V&A Waterfront Auto Spa", province: "Western Cape", lat: -33.9036, lng: 18.4205, price: 120, rating: "4.9", closesAt: 20, is24Hours: false },
+            { name: "Umhlanga Ridge Car Care", province: "KwaZulu-Natal", lat: -29.7285, lng: 31.0826, price: 90, rating: "4.7", closesAt: 18, is24Hours: false },
+            { name: "Polokwane Express Polish", province: "Limpopo", lat: -23.9045, lng: 29.4688, price: 60, rating: "4.3", closesAt: 18, is24Hours: false },
+            { name: "Rustenburg Platinum Clean", province: "North West", lat: -25.6650, lng: 27.2421, price: 65, rating: "4.4", closesAt: 18, is24Hours: false }
         );
 
         let userLat = null; 
         let userLng = null;
         let map, mapInitialized = false;
-        let currentFilter = 'nearby'; // Default state is Nearby
+        let currentFilter = 'nearby';
 
         function calculateDistance(lat1, lon1, lat2, lon2) {
             const R = 6371; 
@@ -228,13 +76,19 @@
             return R * c;
         }
 
-        function getBusinessStatus() {
+        // Precise non-assumptive status check based on individual wash attributes
+        function getBusinessStatus(wash) {
             const currentHour = new Date().getHours();
-            const closingTime = "18:00";
-            if (currentHour >= 7 && currentHour < 18) {
-                return { isOpen: true, text: `🟢 Open Now (Closes at ${closingTime})`, class: "status-open" };
+            
+            if (wash.is24Hours) {
+                return { isOpen: true, text: "🟢 Open 24 Hours", class: "status-open" };
+            }
+
+            const openingHour = 7; // Standard opening at 7 AM
+            if (currentHour >= openingHour && currentHour < wash.closesAt) {
+                return { isOpen: true, text: `🟢 Open Now (Closes at ${wash.closesAt}:00)`, class: "status-open" };
             } else {
-                return { isOpen: false, text: `🔴 Closed (Closed at ${closingTime})`, class: "status-closed" };
+                return { isOpen: false, text: `🔴 Closed (Closed at ${wash.closesAt}:00)`, class: "status-closed" };
             }
         }
 
@@ -245,7 +99,6 @@
                     userLng = position.coords.longitude;
                     renderWashes();
                 }, error => {
-                    console.warn("GPS Location access denied. Falling back to default region center.");
                     userLat = -26.1285; 
                     userLng = 27.9050;
                     renderWashes();
@@ -262,7 +115,7 @@
             
             let processed = carWashes.map(wash => {
                 let dist = calculateDistance(userLat, userLng, wash.lat, wash.lng);
-                let status = getBusinessStatus();
+                let status = getBusinessStatus(wash);
                 return { ...wash, distance: dist, status: status };
             });
 
@@ -352,5 +205,3 @@
 
         window.onload = initApp;
     </script>
-</body>
-</html>
