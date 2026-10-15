@@ -172,6 +172,7 @@
                 <button id="btn-nearby" onclick="filterList('nearby')">📍 Nearby</button>
                 <button id="btn-cheapest" onclick="filterList('cheapest')">💰 Cheapest Nearby</button>
                 <button id="btn-open" onclick="filterList('open')">🟢 Open First</button>
+                <button id="btn-closed" onclick="filterList('closed')">🔴 Closed</button>
                 <button id="btn-map" onclick="toggleMap()">🗺️ Map Option</button>
             </div>
             <div class="right">
@@ -230,7 +231,7 @@
     <!-- Leaflet JS -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script>
-        // Attempt to load carwashes.json; fallback to SAMPLE_CARWASHES.
+        // Attempt to load carwashes.json; fallback to SAMPLE_CARWASHES and Overpass (OSM) live fetch.
         const SAMPLE_CARWASHES = [
             { name: "Clearwater Mall 24/7 Express Wash", province: "Gauteng", lat: -26.1285, lng: 27.9050, price: 75, rating: "4.5", closesAt: 24, is24Hours: true },
             { name: "V&A Waterfront Auto Spa", province: "Western Cape", lat: -33.9036, lng: 18.4205, price: 120, rating: "4.9", closesAt: 21, is24Hours: false }
@@ -268,8 +269,29 @@
             const currentHour = new Date().getHours();
             if (wash.is24Hours) return { isOpen: true, text: "🟢 Open 24 Hours", class: "status-open" };
             const openingHour = 7;
-            if (currentHour >= openingHour && currentHour < wash.closesAt) return { isOpen: true, text: "🟢 Open Now (Closes at " + wash.closesAt + ":00)", class: "status-open" };
-            return { isOpen: false, text: "🔴 Closed (Closes at " + wash.closesAt + ":00)", class: "status-closed" };
+            // handle overnight closing (closesAt <= openingHour means it closes after midnight)
+            if (wash.closesAt > openingHour) {
+                if (currentHour >= openingHour && currentHour < wash.closesAt) return { isOpen: true, text: "🟢 Open Now (Closes at " + wash.closesAt + ":00)", class: "status-open" };
+                return { isOpen: false, text: "🔴 Closed (Opens at " + openingHour + ":00)", class: "status-closed" };
+            } else {
+                // closes after midnight: open from openingHour until 24, and from 0 to closesAt
+                if (currentHour >= openingHour || currentHour < wash.closesAt) return { isOpen: true, text: "🟢 Open Now (24h span, closes at " + wash.closesAt + ":00)", class: "status-open" };
+                return { isOpen: false, text: "🔴 Closed (Opens at " + openingHour + ":00)", class: "status-closed" };
+            }
+        }
+
+        function getOpenTomorrowInfo(wash) {
+            // returns { opensTomorrow: bool, hoursText: string }
+            if (wash.is24Hours) return { opensTomorrow: true, hoursText: 'Open 24/7' };
+            const openingHour = 7;
+            const close = Number(wash.closesAt);
+            if (isNaN(close)) return { opensTomorrow: false, hoursText: 'Unknown' };
+            if (close === openingHour) return { opensTomorrow: false, hoursText: 'Closed all day' };
+            if (close > openingHour) {
+                return { opensTomorrow: true, hoursText: openingHour + ':00 - ' + close + ':00' };
+            }
+            // close <= openingHour => overnight shift that covers early hours of the next day (e.g., closes at 02:00)
+            return { opensTomorrow: true, hoursText: openingHour + ':00 - 24:00 and 00:00 - ' + close + ':00' };
         }
 
         function keyFor(w) {
@@ -291,6 +313,62 @@
             const sel = document.getElementById('province-filter');
             const provinces = Array.from(new Set(carWashes.map(c => c.province || 'Unknown'))).sort();
             sel.innerHTML = '<option value="all">All</option>' + provinces.map(p => '<option value="'+encodeURIComponent(p)+'">'+p+'</option>').join('');
+        }
+
+        // Overpass (OSM) fetch — returns array of mapped washes or null on failure
+        async function fetchOSMCarWashes() {
+            try {
+                // Overpass QL: query nodes/ways/relations tagged amenity=car_wash in South Africa (country area)
+                const q = `
+[out:json][timeout:180];
+area["ISO3166-1"="ZA"]->.country;
+(
+  node["amenity"="car_wash"](area.country);
+  way["amenity"="car_wash"](area.country);
+  relation["amenity"="car_wash"](area.country);
+);
+out center tags;
+`;
+                const url = 'https://overpass-api.de/api/interpreter';
+                const res = await fetch(url, { method: 'POST', body: q, headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
+                if (!res.ok) throw new Error('Overpass HTTP ' + res.status);
+                const data = await res.json();
+                if (!data || !Array.isArray(data.elements)) throw new Error('Invalid Overpass response');
+
+                // map elements to our schema. For ways/relations, use center if present.
+                const out = data.elements.map(el => {
+                    const tags = el.tags || {};
+                    const lat = el.lat || (el.center && el.center.lat) || null;
+                    const lon = el.lon || (el.center && el.center.lon) || null;
+                    return {
+                        name: tags.name || tags.operator || 'Unnamed',
+                        province: tags['addr:province'] || tags['is_in:province'] || 'Unknown',
+                        lat: lat,
+                        lng: lon,
+                        price: tags['fee'] ? Number(tags['fee']) : null,
+                        rating: tags['rating'] || null,
+                        // naive hours: check "opening_hours" tag for 24/7
+                        closesAt: (function(){
+                            const oh = tags['opening_hours'] || '';
+                            if (!oh) return null;
+                            if (/24\/?7|24h/i.test(oh)) return 24;
+                            // try to extract pattern like 07:00-19:00 or 7:00-19:00
+                            const m = oh.match(/(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})/);
+                            if (m) {
+                                const closeHour = parseInt(m[3], 10);
+                                return closeHour;
+                            }
+                            return null;
+                        })(),
+                        is24Hours: (/24\/?7|24h/i).test((el.tags||{})['opening_hours'] || '')
+                    };
+                }).filter(x => x.lat != null && x.lng != null);
+
+                return out;
+            } catch (err) {
+                console.warn('fetchOSMCarWashes error', err);
+                return null;
+            }
         }
 
         // load external file with cache-bust; called at startup and by poller
@@ -376,29 +454,54 @@
             const statusEl = document.getElementById('data-status');
             const lastUpdatedEl = document.getElementById('last-updated');
             if (statusEl) statusEl.innerText = 'Fetching carwashes.json…';
+
+            // Prefer carwashes.json (repo) because it's curated and stable; fall back to OSM fetch if json missing
             const json = await fetchCarWashesOnce(true);
-            if (json && Array.isArray(json)) {
+            if (json && Array.isArray(json) && json.length > 0) {
                 const changed = applyDiffAndUpdate(json);
                 if (!changed) {
                     if (statusEl) statusEl.innerText = 'No changes found — still ' + carWashes.length + ' items';
                 }
                 if (lastUpdatedEl && !changed) lastUpdatedEl.innerText = 'Last checked: ' + (new Date()).toLocaleTimeString();
+                return;
+            }
+
+            // fallback to Overpass (OSM) live fetch
+            if (statusEl) statusEl.innerText = 'carwashes.json not available — querying OSM (this may take a while)…';
+            const osmList = await fetchOSMCarWashes();
+            if (osmList && osmList.length > 0) {
+                const changed = applyDiffAndUpdate(osmList);
+                if (!changed) {
+                    if (statusEl) statusEl.innerText = 'No changes found from OSM — still ' + carWashes.length + ' items';
+                }
             } else {
-                if (statusEl) statusEl.innerText = 'Unable to fetch carwashes.json; using existing data (' + carWashes.length + ' items)';
+                if (statusEl) statusEl.innerText = 'Unable to fetch carwashes.json or OSM data; using existing data (' + carWashes.length + ' items)';
             }
         }
 
         (async function loadExternalData(){
             const statusEl = document.getElementById('data-status');
             const lastUpdatedEl = document.getElementById('last-updated');
+
+            // Try repo JSON first (preferred for curated data)
             const json = await fetchCarWashesOnce(true);
             if (json && json.length > 0) {
                 carWashes = json;
-                if (statusEl) statusEl.innerText = 'Loaded ' + json.length + ' car washes from carwashes.json (live)';
+                if (statusEl) statusEl.innerText = 'Loaded ' + json.length + ' car washes from carwashes.json (curated)';
                 if (lastUpdatedEl) lastUpdatedEl.innerText = 'Last updated: ' + (new Date()).toLocaleString();
             } else {
-                if (statusEl) statusEl.innerText = 'Using embedded sample data (' + carWashes.length + ' items). carwashes.json not found or empty.';
+                // If not found or empty, try Overpass OSM live fetch
+                if (statusEl) statusEl.innerText = 'carwashes.json missing — querying OSM for car_wash POIs (this may take a while)…';
+                const osm = await fetchOSMCarWashes();
+                if (osm && osm.length > 0) {
+                    carWashes = osm;
+                    if (statusEl) statusEl.innerText = 'Loaded ' + osm.length + ' car washes from OSM (Overpass API)';
+                    if (lastUpdatedEl) lastUpdatedEl.innerText = 'Last updated: ' + (new Date()).toLocaleString();
+                } else {
+                    if (statusEl) statusEl.innerText = 'Using embedded sample data (' + carWashes.length + ' items). carwashes.json not found and OSM fetch failed.';
+                }
             }
+
             populateProvinceFilter();
             renderWashes();
 
@@ -455,6 +558,10 @@
             } else if (currentFilter === 'open') {
                 processedFull = processedFull.filter(w => w.distance <= NEARBY_RADIUS_KM);
                 processedFull.sort((a,b) => (a.status.isOpen === b.status.isOpen) ? a.distance - b.distance : (a.status.isOpen ? -1 : 1));
+            } else if (currentFilter === 'closed') {
+                // show only closed washes (across SA)
+                processedFull = processedFull.filter(w => !w.status.isOpen);
+                processedFull.sort((a,b) => a.distance - b.distance);
             } else if (currentFilter === 'gonow') {
                 // show all carwashes across SA
                 processedFull.sort((a,b) => {
@@ -513,15 +620,17 @@
                 html += '<h2 class="province-header">' + prov + ' (' + items.length + ')</h2>';
                 html += items.map(wash => {
                     const mapsUrl = 'https://www.google.com/maps/dir/?api=1&destination=' + encodeURIComponent(wash.lat + ',' + wash.lng);
+                    const tomorrow = getOpenTomorrowInfo(wash);
                     return '<div class="wash-card">' +
                         '<div class="wash-info">' +
                             '<h3>' + (wash.name || 'Unnamed') + '</h3>' +
                             '<p>📍 Province: <strong>' + (wash.province || 'Unknown') + '</strong></p>' +
-                            '<p>🚗 Distance: <strong>' + wash.distance.toFixed(1) + ' km away</strong></p>' +
+                            '<p>🚗 Distance: <strong>' + (wash.distance!=null?wash.distance.toFixed(1):'?') + ' km away</strong></p>' +
                             '<p>⭐ Rating: ' + (wash.rating || 'N/A') + ' / 5.0 | <span class="status-badge ' + wash.status.class + '">' + wash.status.text + '</span></p>' +
+                            '<p>⏰ Tomorrow: <strong>' + (tomorrow.opensTomorrow ? ('Yes — ' + tomorrow.hoursText) : 'No') + '</strong></p>' +
                         '</div>' +
                         '<div class="card-actions">' +
-                            '<span class="badge">R' + (wash.price != null ? wash.price : '-') + '</span>' +
+                            '<span class="badge">' + (wash.price != null ? ('R' + wash.price) : '—') + '</span>' +
                             '<a href="' + mapsUrl + '" target="_blank" class="go-btn">🚗 Go Here</a>' +
                         '</div>' +
                     '</div>';
@@ -547,12 +656,13 @@
         function filterList(type) {
             currentFilter = type;
             currentPage = 1;
-            ['btn-gonow','btn-nearby','btn-cheapest','btn-open'].forEach(id => document.getElementById(id)?.classList.remove('active'));
+            ['btn-gonow','btn-nearby','btn-cheapest','btn-open','btn-closed'].forEach(id => document.getElementById(id)?.classList.remove('active'));
 
             if (currentFilter === 'gonow') document.getElementById('btn-gonow')?.classList.add('active');
             if (currentFilter === 'nearby') document.getElementById('btn-nearby')?.classList.add('active');
             if (currentFilter === 'cheapest') document.getElementById('btn-cheapest')?.classList.add('active');
             if (currentFilter === 'open') document.getElementById('btn-open')?.classList.add('active');
+            if (currentFilter === 'closed') document.getElementById('btn-closed')?.classList.add('active');
 
             // If user selected 'nearby', attempt to get a fresh geolocation before rendering so "nearby" is based on current position.
             if (type === 'nearby') {
@@ -588,7 +698,7 @@
             locations.forEach(wash => {
                 const mapsUrl = 'https://www.google.com/maps/dir/?api=1&destination=' + encodeURIComponent(wash.lat + ',' + wash.lng);
                 const marker = L.marker([wash.lat, wash.lng]);
-                marker.bindPopup('<b>' + (wash.name || 'Unnamed') + '</b><br>Distance: ' + wash.distance.toFixed(1) + ' km<br>Price: R' + (wash.price != null ? wash.price : '-') + "<br><a href='" + mapsUrl + "' target='_blank' rel='noopener'>Open in Google Maps</a>");
+                marker.bindPopup('<b>' + (wash.name || 'Unnamed') + '</b><br>Distance: ' + (wash.distance!=null?wash.distance.toFixed(1):'?') + ' km<br>Price: ' + (wash.price!=null?('R'+wash.price):'—') + "<br><a href='" + mapsUrl + "' target='_blank' rel='noopener'>Open in Google Maps</a>");
                 markersLayer.addLayer(marker);
             });
             const bounds = markersLayer.getBounds();
