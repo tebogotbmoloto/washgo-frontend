@@ -31,7 +31,7 @@
             text-align: center;
         }
         .container {
-            max-width: 800px;
+            max-width: 900px;
             margin: 0 auto;
             padding: 1rem;
         }
@@ -118,6 +118,7 @@
             border-radius: 8px;
         }
         #show-more-container { text-align: center; margin-top: 12px; }
+        .province-header { margin-top: 1.25rem; margin-bottom: 0.5rem; color: #1a3558; }
     </style>
 </head>
 <body>
@@ -158,7 +159,10 @@
     <!-- Leaflet JS -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script>
-        const carWashes = [
+        // The app will attempt to load a carwashes.json file from the same directory (recommended for 200+ entries).
+        // If carwashes.json is not present, the inline SAMPLE_CARWASHES will be used as a fallback.
+
+        const SAMPLE_CARWASHES = [
             { name: "Clearwater Mall 24/7 Express Wash", province: "Gauteng", lat: -26.1285, lng: 27.9050, price: 75, rating: "4.5", closesAt: 24, is24Hours: true },
             { name: "Radiokop Night & Day Auto Spa", province: "Gauteng", lat: -26.1040, lng: 27.9280, price: 70, rating: "4.4", closesAt: 24, is24Hours: true },
             { name: "Randpark Ridge Handwash", province: "Gauteng", lat: -26.1150, lng: 27.9520, price: 75, rating: "4.6", closesAt: 21, is24Hours: false },
@@ -180,6 +184,23 @@
             { name: "Rustenburg Platinum Clean", province: "North West", lat: -25.6650, lng: 27.2421, price: 65, rating: "4.4", closesAt: 20, is24Hours: false }
         ];
 
+        let carWashes = SAMPLE_CARWASHES.slice(); // default; may be replaced by fetched list
+
+        // Attempt to fetch a carwashes.json file (recommended for 200+ items). If present, it overrides the inline array.
+        (function loadExternalData(){
+            fetch('./carwashes.json').then(r => {
+                if (!r.ok) throw new Error('no external file');
+                return r.json();
+            }).then(json => {
+                if (Array.isArray(json) && json.length > 0) {
+                    carWashes = json;
+                    console.info('Loaded', json.length, 'car washes from carwashes.json');
+                }
+            }).catch(_ => {
+                // no external file; continue using embedded sample
+            });
+        })();
+
         // default/fallback location (Johannesburg-ish)
         let userLat = -26.1285;
         let userLng = 27.9050;
@@ -188,9 +209,11 @@
         let markersLayer = null;
         let currentFilter = 'nearby';
 
-        // pagination to avoid UI truncation / browser limits when listing many results
-        const PAGE_SIZE = 200;
-        let currentPage = 1; // 1-based pages
+        // To show all 200+ entries set a very large page size. If you prefer pagination you can implement it later.
+        const PAGE_SIZE = 10000;
+        let currentPage = 1; // kept for compatibility
+
+        const NEARBY_RADIUS_KM = 25; // radius used for nearby/cheapest/open filters
 
         function calculateDistance(lat1, lon1, lat2, lon2) {
             const R = 6371;
@@ -216,6 +239,16 @@
             }
         }
 
+        function groupByProvince(items) {
+            const map = {};
+            items.forEach(it => {
+                const p = it.province || 'Unknown';
+                if (!map[p]) map[p] = [];
+                map[p].push(it);
+            });
+            return map;
+        }
+
         function renderWashes() {
             const listEl = document.getElementById('wash-list');
             const showMoreEl = document.getElementById('show-more-container');
@@ -229,24 +262,28 @@
             });
 
             if (currentFilter === 'nearby') {
-                processedFull = processedFull.filter(wash => wash.distance <= 25);
+                processedFull = processedFull.filter(wash => wash.distance <= NEARBY_RADIUS_KM);
                 processedFull.sort((a, b) => a.distance - b.distance);
             } else if (currentFilter === 'cheapest') {
-                processedFull = processedFull.filter(wash => wash.distance <= 25);
+                processedFull = processedFull.filter(wash => wash.distance <= NEARBY_RADIUS_KM);
                 processedFull.sort((a, b) => a.price - b.price || a.distance - b.distance);
             } else if (currentFilter === 'open') {
-                // Show all nearby washes but place open ones first; do NOT hide closed washes.
-                processedFull = processedFull.filter(wash => wash.distance <= 25);
+                // Show nearby washes, but place open ones first (do NOT hide closed washes)
+                processedFull = processedFull.filter(wash => wash.distance <= NEARBY_RADIUS_KM);
                 processedFull.sort((a, b) => {
                     if (a.status.isOpen === b.status.isOpen) return a.distance - b.distance;
                     return a.status.isOpen ? -1 : 1;
                 });
             } else if (currentFilter === 'gonow') {
                 // 'Go Now' should show all car washes across SA (no distance filter)
-                processedFull.sort((a, b) => a.price - b.price || a.distance - b.distance);
+                processedFull.sort((a, b) => {
+                    // sort by province then name for easy browsing
+                    if ((a.province || '') === (b.province || '')) return (a.name || '').localeCompare(b.name || '');
+                    return (a.province || '').localeCompare(b.province || '');
+                });
             }
 
-            // Reset pagination if necessary
+            // pagination: allow large PAGE_SIZE so all 200+ entries appear
             if (processedFull.length <= PAGE_SIZE) {
                 currentPage = 1;
             }
@@ -262,21 +299,32 @@
                 return;
             }
 
-            listEl.innerHTML = displayed.map(wash => {
-                const mapsUrl = "https://www.google.com/maps/dir/?api=1&destination=" + encodeURIComponent(wash.lat + "," + wash.lng);
-                return '<div class="wash-card">' +
-                    '<div class="wash-info">' +
-                        '<h3>' + wash.name + '</h3>' +
-                        '<p>📍 Province: <strong>' + wash.province + '</strong></p>' +
-                        '<p>🚗 Distance: <strong>' + wash.distance.toFixed(1) + ' km away</strong></p>' +
-                        '<p>⭐ Rating: ' + wash.rating + ' / 5.0 | <span class="status-badge ' + wash.status.class + '">' + wash.status.text + '</span></p>' +
-                    '</div>' +
-                    '<div class="card-actions">' +
-                        '<span class="badge">R' + wash.price + '</span>' +
-                        '<a href="' + mapsUrl + '" target="_blank" class="go-btn">🚗 Go Here</a>' +
-                    '</div>' +
-                '</div>';
-            }).join('');
+            // Group by province for display
+            const grouped = groupByProvince(displayed);
+            const provinces = Object.keys(grouped).sort((a, b) => a.localeCompare(b));
+
+            let html = '';
+            provinces.forEach(prov => {
+                const items = grouped[prov];
+                html += '<h2 class="province-header">' + prov + ' (' + items.length + ')</h2>';
+                html += items.map(wash => {
+                    const mapsUrl = "https://www.google.com/maps/dir/?api=1&destination=" + encodeURIComponent(wash.lat + "," + wash.lng);
+                    return '<div class="wash-card">' +
+                        '<div class="wash-info">' +
+                            '<h3>' + (wash.name || 'Unnamed') + '</h3>' +
+                            '<p>📍 Province: <strong>' + (wash.province || 'Unknown') + '</strong></p>' +
+                            '<p>🚗 Distance: <strong>' + wash.distance.toFixed(1) + ' km away</strong></p>' +
+                            '<p>⭐ Rating: ' + (wash.rating || 'N/A') + ' / 5.0 | <span class="status-badge ' + wash.status.class + '">' + wash.status.text + '</span></p>' +
+                        '</div>' +
+                        '<div class="card-actions">' +
+                            '<span class="badge">R' + (wash.price != null ? wash.price : '-') + '</span>' +
+                            '<a href="' + mapsUrl + '" target="_blank" class="go-btn">🚗 Go Here</a>' +
+                        '</div>' +
+                    '</div>';
+                }).join('');
+            });
+
+            listEl.innerHTML = html;
 
             // show/hide the 'Show more' control
             if (processedFull.length > end) {
@@ -346,9 +394,9 @@
                 const mapsUrl = "https://www.google.com/maps/dir/?api=1&destination=" + encodeURIComponent(wash.lat + "," + wash.lng);
                 const marker = L.marker([wash.lat, wash.lng]);
                 marker.bindPopup(
-                    "<b>" + wash.name + "</b><br>" +
+                    "<b>" + (wash.name || 'Unnamed') + "</b><br>" +
                     "Distance: " + wash.distance.toFixed(1) + " km<br>" +
-                    "Price: R" + wash.price + "<br>" +
+                    "Price: R" + (wash.price != null ? wash.price : '-') + "<br>" +
                     "<a href='" + mapsUrl + "' target='_blank' rel='noopener'>Open in Google Maps</a>"
                 );
                 markersLayer.addLayer(marker);
@@ -367,18 +415,22 @@
             }
         }
 
+        // Wait until DOM ready and (optionally) external data loaded
         document.addEventListener("DOMContentLoaded", function() {
-            if (navigator.geolocation) {
-                navigator.geolocation.getCurrentPosition(position => {
-                    userLat = position.coords.latitude;
-                    userLng = position.coords.longitude;
+            // Small delay to let external fetch happen (if present). If you prefer immediate render, remove the timeout.
+            setTimeout(() => {
+                if (navigator.geolocation) {
+                    navigator.geolocation.getCurrentPosition(position => {
+                        userLat = position.coords.latitude;
+                        userLng = position.coords.longitude;
+                        renderWashes();
+                    }, error => {
+                        renderWashes(); // Uses default fallback coordinates smoothly
+                    }, { enableHighAccuracy: true, timeout: 8000 });
+                } else {
                     renderWashes();
-                }, error => {
-                    renderWashes(); // Uses default fallback coordinates smoothly
-                }, { enableHighAccuracy: true, timeout: 8000 });
-            } else {
-                renderWashes();
-            }
+                }
+            }, 250);
         });
     </script>
 </body>
