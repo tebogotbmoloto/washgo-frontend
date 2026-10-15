@@ -1,21 +1,21 @@
 <!-- Leaflet JS -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script>
-        // Core local dataset points with explicit operational hours/attributes
+        // Core local dataset points with realistic 24/7 or extended hours
         const baseCarWashes = [
-            { name: "Clearwater Mall Express Wash", province: "Gauteng", lat: -26.1285, lng: 27.9050, price: 70, rating: "4.5", closesAt: 18, is24Hours: false },
-            { name: "Radiokop Auto Spa", province: "Gauteng", lat: -26.1040, lng: 27.9280, price: 65, rating: "4.4", closesAt: 18, is24Hours: false },
+            { name: "Clearwater Mall 24/7 Express Wash", province: "Gauteng", lat: -26.1285, lng: 27.9050, price: 75, rating: "4.5", closesAt: 24, is24Hours: true },
+            { name: "Radiokop Night & Day Auto Spa", province: "Gauteng", lat: -26.1040, lng: 27.9280, price: 70, rating: "4.4", closesAt: 24, is24Hours: true },
             { name: "Randpark Ridge Handwash", province: "Gauteng", lat: -26.1150, lng: 27.9520, price: 75, rating: "4.6", closesAt: 19, is24Hours: false },
             { name: "Bel Air Plush Car Wash", province: "Gauteng", lat: -26.0552, lng: 27.9541, price: 85, rating: "4.7", closesAt: 18, is24Hours: false },
-            { name: "Lifestyle Car Care Center", province: "Gauteng", lat: -26.0691, lng: 27.9554, price: 90, rating: "4.6", closesAt: 18, is24Hours: false },
-            { name: "Total Rock Cottage Wash", province: "Gauteng", lat: -26.0912, lng: 27.9350, price: 75, rating: "4.5", closesAt: 22, is24Hours: false }, // Late closing spot
-            { name: "Northgate Mall Wash & Go", province: "Gauteng", lat: -26.0601, lng: 27.9382, price: 80, rating: "4.7", closesAt: 18, is24Hours: false },
+            { name: "Lifestyle Car Care Center", province: "Gauteng", lat: -26.0691, lng: 27.9554, price: 90, rating: "4.6", closesAt: 20, is24Hours: false },
+            { name: "Total Rock Cottage Wash", province: "Gauteng", lat: -26.0912, lng: 27.9350, price: 75, rating: "4.5", closesAt: 22, is24Hours: false }, 
+            { name: "Northgate Mall Wash & Go", province: "Gauteng", lat: -26.0601, lng: 27.9382, price: 80, rating: "4.7", closesAt: 21, is24Hours: false },
             { name: "Honeydew Eco Clean", province: "Gauteng", lat: -26.0820, lng: 27.9150, price: 60, rating: "4.3", closesAt: 18, is24Hours: false },
-            { name: "Fairland Walk Auto Polish", province: "Gauteng", lat: -26.1350, lng: 27.9480, price: 80, rating: "4.8", closesAt: 18, is24Hours: false },
+            { name: "Fairland Walk Auto Polish", province: "Gauteng", lat: -26.1350, lng: 27.9480, price: 80, rating: "4.8", closesAt: 19, is24Hours: false },
             { name: "Constantia Kloof Car Spa", province: "Gauteng", lat: -26.1450, lng: 27.9250, price: 85, rating: "4.7", closesAt: 18, is24Hours: false },
             { name: "Florida Junction Valet", province: "Gauteng", lat: -26.1620, lng: 27.9210, price: 70, rating: "4.5", closesAt: 18, is24Hours: false },
-            { name: "Little Falls Car Care", province: "Gauteng", lat: -26.0950, lng: 27.8820, price: 90, rating: "4.7", closesAt: 18, is24Hours: false },
-            { name: "Strubens Valley Mobile Wash", province: "Gauteng", lat: -26.1120, lng: 27.9120, price: 65, rating: "4.4", closesAt: 18, is24Hours: false }
+            { name: "Little Falls 24/7 Car Care", province: "Gauteng", lat: -26.0950, lng: 27.8820, price: 90, rating: "4.7", closesAt: 24, is24Hours: true },
+            { name: "Strubens Valley Mobile Wash", province: "Gauteng", lat: -26.1120, lng: 27.9120, price: 65, rating: "4.4", closesAt: 20, is24Hours: false }
         ];
 
         let carWashes = [];
@@ -33,9 +33,9 @@
                 let suffix = neighborhoodSuffixes[Math.floor(Math.random() * neighborhoodSuffixes.length)];
                 let street = streetNames[Math.floor(Math.random() * streetNames.length)];
                 
-                // Assign explicit hours based on type
-                let closingHour = (i % 5 === 0) ? 24 : 18; // Make some explicitly 24 hours
-                let is24 = (closingHour === 24);
+                // Mix in 24-hour and late-night spots realistically
+                let is24 = (i % 3 === 0);
+                let closingHour = is24 ? 24 : (18 + Math.floor(Math.random() * 4)); // Closes between 18:00 and 21:00
 
                 carWashes.push({
                     name: `${street} ${suffix} (${i})`,
@@ -50,14 +50,14 @@
             }
         });
 
-        // Add major national spots with explicit hours
+        // Add national spots
         carWashes.push(
-            { name: "Sandton Mobile Handwash", province: "Gauteng", lat: -26.1076, lng: 28.0567, price: 80, rating: "4.8", closesAt: 18, is24Hours: false },
-            { name: "Menlyn Eco Wash", province: "Gauteng", lat: -25.7825, lng: 28.2751, price: 75, rating: "4.6", closesAt: 18, is24Hours: false },
-            { name: "V&A Waterfront Auto Spa", province: "Western Cape", lat: -33.9036, lng: 18.4205, price: 120, rating: "4.9", closesAt: 20, is24Hours: false },
-            { name: "Umhlanga Ridge Car Care", province: "KwaZulu-Natal", lat: -29.7285, lng: 31.0826, price: 90, rating: "4.7", closesAt: 18, is24Hours: false },
-            { name: "Polokwane Express Polish", province: "Limpopo", lat: -23.9045, lng: 29.4688, price: 60, rating: "4.3", closesAt: 18, is24Hours: false },
-            { name: "Rustenburg Platinum Clean", province: "North West", lat: -25.6650, lng: 27.2421, price: 65, rating: "4.4", closesAt: 18, is24Hours: false }
+            { name: "Sandton 24/7 Mobile Handwash", province: "Gauteng", lat: -26.1076, lng: 28.0567, price: 80, rating: "4.8", closesAt: 24, is24Hours: true },
+            { name: "Menlyn Eco Wash", province: "Gauteng", lat: -25.7825, lng: 28.2751, price: 75, rating: "4.6", closesAt: 20, is24Hours: false },
+            { name: "V&A Waterfront Auto Spa", province: "Western Cape", lat: -33.9036, lng: 18.4205, price: 120, rating: "4.9", closesAt: 21, is24Hours: false },
+            { name: "Umhlanga Ridge Car Care", province: "KwaZulu-Natal", lat: -29.7285, lng: 31.0826, price: 90, rating: "4.7", closesAt: 22, is24Hours: false },
+            { name: "Polokwane Express Polish", province: "Limpopo", lat: -23.9045, lng: 29.4688, price: 60, rating: "4.3", closesAt: 19, is24Hours: false },
+            { name: "Rustenburg Platinum Clean", province: "North West", lat: -25.6650, lng: 27.2421, price: 65, rating: "4.4", closesAt: 19, is24Hours: false }
         );
 
         let userLat = null; 
@@ -76,7 +76,6 @@
             return R * c;
         }
 
-        // Precise non-assumptive status check based on individual wash attributes
         function getBusinessStatus(wash) {
             const currentHour = new Date().getHours();
             
@@ -84,7 +83,7 @@
                 return { isOpen: true, text: "🟢 Open 24 Hours", class: "status-open" };
             }
 
-            const openingHour = 7; // Standard opening at 7 AM
+            const openingHour = 7; 
             if (currentHour >= openingHour && currentHour < wash.closesAt) {
                 return { isOpen: true, text: `🟢 Open Now (Closes at ${wash.closesAt}:00)`, class: "status-open" };
             } else {
