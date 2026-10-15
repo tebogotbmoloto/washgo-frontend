@@ -134,6 +134,7 @@
             <button id="btn-gonow" onclick="filterList('gonow')">⚡ Go Now (All SA)</button>
             <button id="btn-nearby" class="active" onclick="filterList('nearby')">📍 Nearby</button>
             <button id="btn-cheapest" onclick="filterList('cheapest')">💰 Cheapest Nearby</button>
+            <button id="btn-open" onclick="filterList('open')">🟢 Open Only</button>
             <button id="btn-map" onclick="toggleMap()">🗺️ Map Option</button>
         </div>
 
@@ -172,7 +173,6 @@
             { name: "Strubens Valley Mobile Wash", province: "Gauteng", lat: -26.1120, lng: 27.9120, price: 65, rating: "4.4" }
         ];
 
-        // Programmatically generate a rich directory of 200+ distinct local car washes
         let carWashes = [];
         const neighborhoodSuffixes = ["Express", "Mobile Spa", "Handwash & Go", "Premium Clean", "Eco Wash", "Auto Clinic", "Quick Shine", "Pro Valet", "Corner Wash", "Super Clean"];
         const streetNames = ["Beyers Naude", "Hendrik Potgieter", "CR Swart", "Okonkor", "Wilgerood", "Dolphin", "Paul Kruger", "Ontdekkers", "Constantia", "Jim Fouche"];
@@ -230,10 +230,11 @@
 
         function getBusinessStatus() {
             const currentHour = new Date().getHours();
+            const closingTime = "18:00";
             if (currentHour >= 7 && currentHour < 18) {
-                return { text: "🟢 Open Now", class: "status-open" };
+                return { isOpen: true, text: `🟢 Open Now (Closes at ${closingTime})`, class: "status-open" };
             } else {
-                return { text: "🔴 Closed", class: "status-closed" };
+                return { isOpen: false, text: `🔴 Closed (Closed at ${closingTime})`, class: "status-closed" };
             }
         }
 
@@ -261,7 +262,8 @@
             
             let processed = carWashes.map(wash => {
                 let dist = calculateDistance(userLat, userLng, wash.lat, wash.lng);
-                return { ...wash, distance: dist };
+                let status = getBusinessStatus();
+                return { ...wash, distance: dist, status: status };
             });
 
             if (currentFilter === 'nearby') {
@@ -270,16 +272,19 @@
             } else if (currentFilter === 'cheapest') {
                 processed = processed.filter(wash => wash.distance <= 25);
                 processed.sort((a, b) => a.price - b.price || a.distance - b.distance);
-            } else if (currentFilter === 'gonow') {
+            } else if (currentFilter === 'open') {
+                // Filter only those currently open, within reasonable local range (25km), sorted by distance
+                processed = processed.filter(wash => wash.status.isOpen && wash.distance <= 25);
                 processed.sort((a, b) => a.distance - b.distance);
+            } else if (currentFilter === 'gonow') {
+                // All SA: Show all provinces sorted strictly by cheapest price first
+                processed.sort((a, b) => a.price - b.price || a.distance - b.distance);
             }
 
             if (processed.length === 0) {
-                listEl.innerHTML = `<p style="text-align: center;">No car washes found within range.</p>`;
+                listEl.innerHTML = `<p style="text-align: center;">No car washes found matching this filter criteria right now.</p>`;
                 return;
             }
-
-            const status = getBusinessStatus();
 
             listEl.innerHTML = processed.map(wash => {
                 const mapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${wash.lat},${wash.lng}`;
@@ -289,7 +294,7 @@
                             <h3>${wash.name}</h3>
                             <p>📍 Province: <strong>${wash.province}</strong></p>
                             <p>🚗 Distance: <strong>${wash.distance.toFixed(1)} km away</strong></p>
-                            <p>⭐ Rating: ${wash.rating} / 5.0 | <span class="status-badge ${status.class}">${status.text}</span></p>
+                            <p>⭐ Rating: ${wash.rating} / 5.0 | <span class="status-badge ${wash.status.class}">${wash.status.text}</span></p>
                         </div>
                         <div class="card-actions">
                             <span class="badge">R${wash.price}</span>
@@ -308,10 +313,12 @@
             document.getElementById('btn-gonow').classList.remove('active');
             document.getElementById('btn-nearby').classList.remove('active');
             document.getElementById('btn-cheapest').classList.remove('active');
+            document.getElementById('btn-open').classList.remove('active');
 
             if(currentFilter === 'gonow') document.getElementById('btn-gonow').classList.add('active');
             if(currentFilter === 'nearby') document.getElementById('btn-nearby').classList.add('active');
             if(currentFilter === 'cheapest') document.getElementById('btn-cheapest').classList.add('active');
+            if(currentFilter === 'open') document.getElementById('btn-open').classList.add('active');
             
             renderWashes();
         }
