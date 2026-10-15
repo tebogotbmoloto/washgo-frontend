@@ -163,7 +163,7 @@
         let userLat = -26.2041; // Default fallback: Johannesburg center
         let userLng = 28.0473;
         let map, mapInitialized = false;
-        let currentFilter = 'nearby'; // Default state is set to nearby
+        let currentFilter = 'nearby'; // Default state
 
         function calculateDistance(lat1, lon1, lat2, lon2) {
             const R = 6371; 
@@ -199,14 +199,21 @@
                 return { ...wash, distance: dist };
             });
 
-            // Sorting logic based on active filter
+            // Filter and sorting logic
             if (currentFilter === 'nearby') {
+                // Only keep car washes within a closer radius (e.g., 150 km) so distant ones like Polokwane are hidden by default
+                processed = processed.filter(wash => wash.distance <= 150);
                 processed.sort((a, b) => a.distance - b.distance);
             } else if (currentFilter === 'gonow') {
-                // Keep original national order or sort by general proximity as fallback
+                // Show all of South Africa sorted by distance
                 processed.sort((a, b) => a.distance - b.distance);
             } else if (currentFilter === 'cheapest') {
                 processed.sort((a, b) => a.price - b.price || a.distance - b.distance);
+            }
+
+            if (processed.length === 0) {
+                listEl.innerHTML = `<p style="text-align: center;">No car washes found nearby. Try switching to "Go Now (All SA)" to see listings across South Africa.</p>`;
+                return;
             }
 
             listEl.innerHTML = processed.map(wash => {
