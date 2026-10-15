@@ -124,7 +124,7 @@
         <div class="controls">
             <button id="btn-gonow" onclick="filterList('gonow')">⚡ Go Now (All SA)</button>
             <button id="btn-nearby" class="active" onclick="filterList('nearby')">📍 Nearby</button>
-            <button id="btn-cheapest" onclick="filterList('cheapest')">💰 Cheapest</button>
+            <button id="btn-cheapest" onclick="filterList('cheapest')">💰 Cheapest Nearby</button>
             <button id="btn-map" onclick="toggleMap()">🗺️ Map Option</button>
         </div>
 
@@ -146,18 +146,27 @@
     <!-- Leaflet JS -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script>
-        // Expanded dataset including local spots around Clearwater, Radiokop, Northriding, etc.
+        // Extended rich dataset of local and regional car washes
         const carWashes = [
-            { name: "Plush Car Wash (Bel Air)", province: "Gauteng", lat: -26.0552, lng: 27.9541, price: 85, rating: "4.7" },
-            { name: "BigF Car Wash (Lifestyle)", province: "Gauteng", lat: -26.0691, lng: 27.9554, price: 90, rating: "4.6" },
+            // Local Area Spots (Gauteng / West Rand / Randburg / Roodepoort region)
+            { name: "Clearwater Mall Express Wash", province: "Gauteng", lat: -26.1285, lng: 27.9050, price: 70, rating: "4.5" },
+            { name: "Radiokop Auto Spa", province: "Gauteng", lat: -26.1040, lng: 27.9280, price: 65, rating: "4.4" },
+            { name: "Randpark Ridge Handwash", province: "Gauteng", lat: -26.1150, lng: 27.9520, price: 75, rating: "4.6" },
+            { name: "Bel Air Plush Car Wash", province: "Gauteng", lat: -26.0552, lng: 27.9541, price: 85, rating: "4.7" },
+            { name: "Lifestyle Car Care Center", province: "Gauteng", lat: -26.0691, lng: 27.9554, price: 90, rating: "4.6" },
             { name: "Total Rock Cottage Wash", province: "Gauteng", lat: -26.0912, lng: 27.9350, price: 75, rating: "4.5" },
-            { name: "Autowash Northgate", province: "Gauteng", lat: -26.0601, lng: 27.9382, price: 80, rating: "4.7" },
-            { name: "Clearwater Handwash & Spa", province: "Gauteng", lat: -26.1285, lng: 27.9050, price: 70, rating: "4.5" },
+            { name: "Northgate Mall Wash & Go", province: "Gauteng", lat: -26.0601, lng: 27.9382, price: 80, rating: "4.7" },
+            { name: "Honeydew Eco Clean", province: "Gauteng", lat: -26.0820, lng: 27.9150, price: 60, rating: "4.3" },
+            { name: "Fairland Walk Auto Polish", province: "Gauteng", lat: -26.1350, lng: 27.9480, price: 80, rating: "4.8" },
+            { name: "Constantia Kloof Car Spa", province: "Gauteng", lat: -26.1450, lng: 27.9250, price: 85, rating: "4.7" },
+            
+            // Major National Spots (Only viewable when "Go Now (All SA)" is clicked)
             { name: "Sandton Mobile Handwash", province: "Gauteng", lat: -26.1076, lng: 28.0567, price: 80, rating: "4.8" },
             { name: "Menlyn Eco Wash", province: "Gauteng", lat: -25.7825, lng: 28.2751, price: 75, rating: "4.6" },
             { name: "V&A Waterfront Auto Spa", province: "Western Cape", lat: -33.9036, lng: 18.4205, price: 120, rating: "4.9" },
             { name: "Umhlanga Ridge Car Care", province: "KwaZulu-Natal", lat: -29.7285, lng: 31.0826, price: 90, rating: "4.7" },
-            { name: "Polokwane Express Polish", province: "Limpopo", lat: -23.9045, lng: 29.4688, price: 60, rating: "4.3" }
+            { name: "Polokwane Express Polish", province: "Limpopo", lat: -23.9045, lng: 29.4688, price: 60, rating: "4.3" },
+            { name: "Rustenburg Platinum Clean", province: "North West", lat: -25.6650, lng: 27.2421, price: 65, rating: "4.4" }
         ];
 
         let userLat = null; 
@@ -184,13 +193,13 @@
                     renderWashes();
                 }, error => {
                     console.warn("GPS Location access denied. Falling back to default region center.");
-                    userLat = -26.0691;
-                    userLng = 27.9554;
+                    userLat = -26.1285; // Default near Clearwater/West Rand
+                    userLng = 27.9050;
                     renderWashes();
                 }, { enableHighAccuracy: true, timeout: 10000 });
             } else {
-                userLat = -26.0691;
-                userLng = 27.9554;
+                userLat = -26.1285;
+                userLng = 27.9050;
                 renderWashes();
             }
         }
@@ -205,18 +214,20 @@
 
             // Filtering & sorting logic
             if (currentFilter === 'nearby') {
-                // Restrict to a tight 35km radius so distant places like Polokwane are excluded
-                processed = processed.filter(wash => wash.distance <= 35);
+                // Strict 30km radius cap for nearby list
+                processed = processed.filter(wash => wash.distance <= 30);
                 processed.sort((a, b) => a.distance - b.distance);
+            } else if (currentFilter === 'cheapest') {
+                // STRICT RULE: Only look for cheap options within a reasonable local driving distance (e.g., 35km), then sort by price
+                processed = processed.filter(wash => wash.distance <= 35);
+                processed.sort((a, b) => a.price - b.price || a.distance - b.distance);
             } else if (currentFilter === 'gonow') {
                 // Show all of South Africa sorted by distance
                 processed.sort((a, b) => a.distance - b.distance);
-            } else if (currentFilter === 'cheapest') {
-                processed.sort((a, b) => a.price - b.price || a.distance - b.distance);
             }
 
             if (processed.length === 0) {
-                listEl.innerHTML = `<p style="text-align: center;">No car washes found within 35km of your location. Click <strong>"Go Now (All SA)"</strong> above to view national listings.</p>`;
+                listEl.innerHTML = `<p style="text-align: center;">No car washes found within range. Click <strong>"Go Now (All SA)"</strong> above to view national listings.</p>`;
                 return;
             }
 
