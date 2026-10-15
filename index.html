@@ -5,10 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>CarWash Locator South Africa</title>
     <meta name="theme-color" content="#007bff">
-    
+
     <!-- Leaflet CSS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    
+
     <style>
         :root {
             --primary: #007bff;
@@ -16,6 +16,7 @@
             --danger: #dc3545;
             --bg: #f4f7f6;
             --text: #333;
+            --accent: #ff7a59;
         }
         body {
             font-family: Arial, sans-serif;
@@ -119,6 +120,19 @@
         .go-btn:hover {
             background-color: #218838;
         }
+        .promote-btn {
+            background: var(--accent);
+            color: #fff;
+            padding: 6px 10px;
+            font-size: 0.8rem;
+            text-decoration: none;
+            border-radius: 4px;
+            font-weight: bold;
+        }
+        .promote-btn:hover {
+            background: #ed6844;
+            color: #fff;
+        }
         .ad-container {
             margin-top: 2rem;
             text-align: center;
@@ -128,6 +142,81 @@
         }
         #show-more-container { text-align: center; margin-top: 12px; }
         .province-header { margin-top: 1.25rem; margin-bottom: 0.5rem; color: #1a3558; }
+
+        .monetization-panel {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            align-items: center;
+            justify-content: center;
+            background: rgba(255,255,255,0.8);
+            border: 1px solid #e6e6e6;
+            border-radius: 10px;
+            padding: 12px;
+            margin: 0 0 16px;
+        }
+        .monetization-panel .donate-btn {
+            background: #003087;
+            color: #fff;
+        }
+        .monetization-panel .support-btn {
+            background: #ffdd57;
+            color: #000;
+        }
+        .ad-slot {
+            min-width: 220px;
+            max-width: 320px;
+            border: 1px dashed #bdbdbd;
+            padding: 10px;
+            border-radius: 6px;
+            text-align: center;
+            color: #666;
+            background: #fff;
+            font-size: 0.85rem;
+        }
+
+        .promote-modal-backdrop {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.55);
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+            padding: 16px;
+        }
+        .promote-modal {
+            background: #fff;
+            border-radius: 12px;
+            width: min(420px, 100%);
+            padding: 18px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+        .promote-modal h3 {
+            margin-top: 0;
+            margin-bottom: 12px;
+        }
+        .promote-modal label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+        .promote-modal select {
+            width: 100%;
+            padding: 10px;
+            border-radius: 6px;
+            border: 1px solid #ddd;
+            margin-top: 6px;
+        }
+        .promote-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 8px;
+            margin-top: 16px;
+        }
+        .promote-actions button {
+            padding: 8px 12px;
+        }
 
         /* Pagination controls */
         .pager { display:flex; gap:8px; justify-content:center; align-items:center; margin-top:12px; }
@@ -190,8 +279,18 @@
                     <option value="100" selected>100</option>
                     <option value="all">All</option>
                 </select>
-                <label title="Fetch live POIs from OpenStreetMap (Overpass). When enabled, the app queries OSM for car_wash POIs; if disabled the app prefers carwashes.json in the repo."><input id="live-toggle" type="checkbox" checked /> Live OSM</label>
+                <label title="Fetch live POIs from OpenStreetMap (Overpass). When enabled, the app queries OSM for car_wash POIs; if disabled the app prefers carwashes.json in the repo."><input id="live-toggle" type="checkbox" checked> Live POIs</label>
             </div>
+        </div>
+
+        <div class="monetization-panel">
+            <a href="https://www.buymeacoffee.com/YOUR_USERNAME" target="_blank" rel="noopener noreferrer" style="text-decoration:none;">
+                <button class="support-btn">☕ Support — Buy me a coffee</button>
+            </a>
+            <a href="https://paypal.me/YOUR_PAYPAL" target="_blank" rel="noopener noreferrer" style="text-decoration:none;">
+                <button class="donate-btn">💝 Donate (PayPal)</button>
+            </a>
+            <div class="ad-slot">Ad slot placeholder — Google AdSense or local sponsor</div>
         </div>
 
         <!-- status about data source -->
@@ -229,6 +328,17 @@
         </div>
     </div>
 
+    <div id="promote-modal" class="promote-modal-backdrop" aria-modal="true" role="dialog">
+        <div class="promote-modal">
+            <h3>Promote Listing</h3>
+            <div id="promote-body"></div>
+            <div class="promote-actions">
+                <button id="promote-cancel">Cancel</button>
+                <button id="promote-submit" style="background:#007bff;color:#fff;">Pay & Promote</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Leaflet JS -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script>
@@ -254,6 +364,7 @@
 
         const NEARBY_RADIUS_KM = 25;
         const POLL_INTERVAL_MS = 60 * 1000; // 60s
+        const PROMOTION_API_BASE = (window.WASHGO_PROMOTION_API_BASE || '').replace(/\/$/, '');
 
         // When true, app preferentially fetches live OSM (Overpass) POIs at startup and refresh.
         let liveMode = true;
@@ -334,19 +445,16 @@ area["ISO3166-1"="ZA"]->.country;
 out center tags;
 `;
                 const url = 'https://overpass-api.de/api/interpreter';
-                // Overpass expects the query via POST parameter 'data'
                 const body = 'data=' + encodeURIComponent(q);
                 const res = await fetch(url, { method: 'POST', body: body, headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' } });
                 if (!res.ok) throw new Error('Overpass HTTP ' + res.status);
                 const data = await res.json();
                 if (!data || !Array.isArray(data.elements)) throw new Error('Invalid Overpass response');
 
-                // map elements to our schema. For ways/relations, use center if present.
                 const out = data.elements.map(el => {
                     const tags = el.tags || {};
                     const lat = el.lat || (el.center && el.center.lat) || null;
                     const lon = el.lon || (el.center && el.center.lon) || null;
-                    // try to parse a numeric closesAt from opening_hours (best-effort)
                     const openingTag = tags['opening_hours'] || '';
                     let closesAt = null;
                     let is24 = false;
@@ -381,7 +489,6 @@ out center tags;
             }
         }
 
-        // load external file with cache-bust; called at startup and by poller
         async function fetchCarWashesOnce(cacheBust = true) {
             try {
                 const url = 'carwashes.json' + (cacheBust ? ('?cacheBust=' + Date.now()) : '');
@@ -396,7 +503,6 @@ out center tags;
             }
         }
 
-        // apply diff: add new entries, update changed ones, remove missing entries
         function applyDiffAndUpdate(newList) {
             const statusEl = document.getElementById('data-status');
             const lastUpdatedEl = document.getElementById('last-updated');
@@ -409,49 +515,41 @@ out center tags;
             const updated = [];
             const removed = [];
 
-            // find added and updated
             for (const [k, newItem] of newMap.entries()) {
                 if (!oldMap.has(k)) {
                     added.push(newItem);
                 } else {
                     const oldItem = oldMap.get(k);
-                    // simple shallow comparison (JSON) — detects field changes
                     if (JSON.stringify(oldItem) !== JSON.stringify(newItem)) {
                         updated.push(newItem);
                     }
                 }
             }
 
-            // find removed
             for (const [k, oldItem] of oldMap.entries()) {
                 if (!newMap.has(k)) removed.push(oldItem);
             }
 
-            // If nothing changed, update status and return
             if (added.length === 0 && updated.length === 0 && removed.length === 0) {
                 if (statusEl) statusEl.innerText = 'Checked: no changes (' + carWashes.length + ' items)';
                 if (lastUpdatedEl) lastUpdatedEl.innerText = 'Last checked: ' + (new Date()).toLocaleTimeString();
                 return false;
             }
 
-            // Apply removals
             if (removed.length > 0) {
                 const removedKeys = new Set(removed.map(r => keyFor(r)));
                 carWashes = carWashes.filter(w => !removedKeys.has(keyFor(w)));
             }
 
-            // Apply updates (replace in-place)
             if (updated.length > 0) {
                 const updateMap = new Map(updated.map(u => [keyFor(u), u]));
                 carWashes = carWashes.map(w => updateMap.has(keyFor(w)) ? updateMap.get(keyFor(w)) : w);
             }
 
-            // Apply additions — append at the end so they appear in list; you can change to unshift to show on top
             if (added.length > 0) {
                 carWashes = carWashes.concat(added);
             }
 
-            // Update UI and status
             populateProvinceFilter();
             renderWashes();
             if (statusEl) statusEl.innerText = 'Updated: +' + added.length + ' / ~' + updated.length + ' changes / -' + removed.length + ' removed — total ' + carWashes.length;
@@ -487,7 +585,6 @@ out center tags;
                 return;
             }
 
-            // non-live mode: prefer curated carwashes.json
             const json = await fetchCarWashesOnce(true);
             if (json && Array.isArray(json) && json.length > 0) {
                 const changed = applyDiffAndUpdate(json);
@@ -498,7 +595,6 @@ out center tags;
                 return;
             }
 
-            // fallback to OSM if curated file missing
             if (statusEl) statusEl.innerText = 'carwashes.json not available — querying OSM (this may take a while)…';
             const osmList = await fetchOSMCarWashes();
             if (osmList && osmList.length > 0) {
@@ -515,7 +611,6 @@ out center tags;
             const statusEl = document.getElementById('data-status');
             const lastUpdatedEl = document.getElementById('last-updated');
 
-            // Determine liveMode from checkbox if present
             const liveToggle = document.getElementById('live-toggle');
             if (liveToggle) liveMode = liveToggle.checked;
 
@@ -527,7 +622,6 @@ out center tags;
                     if (statusEl) statusEl.innerText = 'Loaded ' + osm.length + ' car washes from OSM (Overpass)';
                     if (lastUpdatedEl) lastUpdatedEl.innerText = 'Last updated: ' + (new Date()).toLocaleString();
                 } else {
-                    // fallback to curated file if OSM fails
                     const json = await fetchCarWashesOnce(true);
                     if (json && json.length > 0) {
                         carWashes = json;
@@ -538,7 +632,6 @@ out center tags;
                     }
                 }
             } else {
-                // prefer curated carwashes.json
                 const json = await fetchCarWashesOnce(true);
                 if (json && json.length > 0) {
                     carWashes = json;
@@ -559,18 +652,14 @@ out center tags;
 
             populateProvinceFilter();
             renderWashes();
-
-            // start polling for updates
             startPollingForUpdates();
         })();
 
         function startPollingForUpdates() {
-            // Use setInterval to poll; the manual refresh button uses the same apply logic
             setInterval(async () => {
                 await manualFetchAndApply();
             }, POLL_INTERVAL_MS);
 
-            // bind manual refresh button and live toggle
             document.getElementById('manual-refresh').addEventListener('click', () => {
                 manualFetchAndApply();
             });
@@ -578,13 +667,11 @@ out center tags;
             if (liveToggle) {
                 liveToggle.addEventListener('change', () => {
                     liveMode = liveToggle.checked;
-                    // fetch immediately when toggled
                     manualFetchAndApply();
                 });
             }
         }
 
-        // Request fresh geolocation then render (used when user clicks 'Nearby')
         function requestLocationAndRender() {
             const listEl = document.getElementById('wash-list');
             if (navigator.geolocation) {
@@ -608,10 +695,8 @@ out center tags;
             const statusEl = document.getElementById('data-status');
             if (!listEl) return;
 
-            // compute processed list (distance/status)
             let processedFull = carWashes.map(wash => ({ ...wash, distance: calculateDistance(userLat, userLng, wash.lat, wash.lng), status: getBusinessStatus(wash) }));
 
-            // apply filter mode
             if (currentFilter === 'nearby') {
                 processedFull = processedFull.filter(w => w.distance <= NEARBY_RADIUS_KM);
                 processedFull.sort((a,b) => a.distance - b.distance);
@@ -622,18 +707,15 @@ out center tags;
                 processedFull = processedFull.filter(w => w.distance <= NEARBY_RADIUS_KM);
                 processedFull.sort((a,b) => (a.status.isOpen === b.status.isOpen) ? a.distance - b.distance : (a.status.isOpen ? -1 : 1));
             } else if (currentFilter === 'closed') {
-                // show only closed washes (across SA)
                 processedFull = processedFull.filter(w => !w.status.isOpen);
                 processedFull.sort((a,b) => a.distance - b.distance);
             } else if (currentFilter === 'gonow') {
-                // show all carwashes across SA
                 processedFull.sort((a,b) => {
                     if ((a.province||'') === (b.province||'')) return (a.name||'').localeCompare(b.name||'');
                     return (a.province||'').localeCompare(b.province||'');
                 });
             }
 
-            // province filter
             const provinceSel = document.getElementById('province-filter');
             const provVal = provinceSel ? provinceSel.value : 'all';
             if (provVal && provVal !== 'all') {
@@ -641,16 +723,12 @@ out center tags;
                 processedFull = processedFull.filter(w => (w.province || 'Unknown') === decoded);
             }
 
-            // search
             const q = (document.getElementById('search-input')?.value || '').trim().toLowerCase();
             if (q) {
                 processedFull = processedFull.filter(w => ((w.name||'').toLowerCase().includes(q) || (w.province||'').toLowerCase().includes(q)));
             }
 
-            // pagination calculations
             const total = processedFull.length;
-
-            // handle 'all' page size
             const pageSizeSelectVal = document.getElementById('page-size-select')?.value || '100';
             let effectivePageSize = pageSize;
             if (pageSizeSelectVal === 'all') {
@@ -665,9 +743,8 @@ out center tags;
             const endIdx = startIdx + effectivePageSize;
             const displayed = processedFull.slice(startIdx, endIdx);
 
-            if (statusEl) statusEl.innerText = (carWashes.length || 0) + ' total car washes available — showing ' + displayed.length + (currentFilter === 'nearby' ? (' within ' + NEARBY_RADIUS_KM + 'km') : '');
+            if (statusEl) statusEl.innerText = (carWashes.length || 0) + ' total car washes available — showing ' + displayed.length + (currentFilter === 'nearby' ? (' within ' + NEARBY_RADIUS_KM + ' km') : '');
 
-            // show results grouped by province (only on displayed set)
             if (displayed.length === 0) {
                 listEl.innerHTML = '<p style="text-align:center;">No car washes found matching this filter or search.</p>';
                 if (mapInitialized && markersLayer) markersLayer.clearLayers();
@@ -684,6 +761,7 @@ out center tags;
                 html += items.map(wash => {
                     const mapsUrl = 'https://www.google.com/maps/dir/?api=1&destination=' + encodeURIComponent(wash.lat + ',' + wash.lng);
                     const tomorrow = getOpenTomorrowInfo(wash);
+                    const washKey = keyFor(wash);
                     return '<div class="wash-card">' +
                         '<div class="wash-info">' +
                             '<h3>' + (wash.name || 'Unnamed') + '</h3>' +
@@ -694,6 +772,7 @@ out center tags;
                         '</div>' +
                         '<div class="card-actions">' +
                             '<span class="badge">' + (wash.price != null ? ('R' + wash.price) : '—') + '</span>' +
+                            '<button class="promote-btn" data-wash-key="' + encodeURIComponent(washKey) + '" data-wash-name="' + encodeURIComponent(wash.name || 'Unnamed') + '">⭐ Promote</button>' +
                             '<a href="' + mapsUrl + '" target="_blank" class="go-btn">🚗 Go Here</a>' +
                         '</div>' +
                     '</div>';
@@ -701,13 +780,11 @@ out center tags;
             });
             listEl.innerHTML = html;
 
-            // pagination UI
             if (pager) pager.style.display = total > effectivePageSize ? 'flex' : 'none';
             if (document.getElementById('page-info')) document.getElementById('page-info').innerText = currentPage + ' / ' + totalPages + ' — ' + total + ' results';
             if (document.getElementById('prev-page')) document.getElementById('prev-page').disabled = currentPage <= 1;
             if (document.getElementById('next-page')) document.getElementById('next-page').disabled = currentPage >= totalPages;
 
-            // update map markers to show only displayed items
             if (mapInitialized) updateMapMarkers(displayed);
         }
 
@@ -727,7 +804,6 @@ out center tags;
             if (currentFilter === 'open') document.getElementById('btn-open')?.classList.add('active');
             if (currentFilter === 'closed') document.getElementById('btn-closed')?.classList.add('active');
 
-            // If user selected 'nearby', attempt to get a fresh geolocation before rendering so "nearby" is based on current position.
             if (type === 'nearby') {
                 requestLocationAndRender();
             } else {
@@ -761,7 +837,7 @@ out center tags;
             locations.forEach(wash => {
                 const mapsUrl = 'https://www.google.com/maps/dir/?api=1&destination=' + encodeURIComponent(wash.lat + ',' + wash.lng);
                 const marker = L.marker([wash.lat, wash.lng]);
-                marker.bindPopup('<b>' + (wash.name || 'Unnamed') + '</b><br>Distance: ' + (wash.distance!=null?wash.distance.toFixed(1):'?') + ' km<br>Price: ' + (wash.price!=null?('R'+wash.price):'—') + "<br><a href='" + mapsUrl + "' target='_blank' rel='noopener'>Open in Google Maps</a>");
+                marker.bindPopup('<b>' + (wash.name || 'Unnamed') + '</b><br>Distance: ' + (wash.distance!=null?wash.distance.toFixed(1):'?') + ' km<br>Price: ' + (wash.price!=null?('R'+wash.price):'N/A') + '<br><a href="' + mapsUrl + '" target="_blank" rel="noopener">Open in Google Maps</a>');
                 markersLayer.addLayer(marker);
             });
             const bounds = markersLayer.getBounds();
@@ -772,12 +848,63 @@ out center tags;
             }
         }
 
-        // event bindings
+        function openPromoteModal(washKey, washName) {
+            const modal = document.getElementById('promote-modal');
+            const body = document.getElementById('promote-body');
+            if (!modal || !body) return;
+
+            body.innerHTML = `
+                <p>Promote <strong>${decodeURIComponent(washName || 'This listing')}</strong> so it stands out in search results.</p>
+                <label>
+                    Duration
+                    <select id="promote-duration">
+                        <option value="7">7 days — R50</option>
+                        <option value="14">14 days — R90</option>
+                        <option value="30">30 days — R150</option>
+                    </select>
+                </label>
+            `;
+
+            modal.style.display = 'flex';
+            const submitBtn = document.getElementById('promote-submit');
+            submitBtn.onclick = async () => {
+                const days = document.getElementById('promote-duration').value;
+                try {
+                    const endpoint = `${PROMOTION_API_BASE}/create-promotion`;
+                    const res = await fetch(endpoint, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ key: decodeURIComponent(washKey), name: decodeURIComponent(washName || 'Unnamed'), days })
+                    });
+                    const data = await res.json();
+                    if (!res.ok) throw new Error(data && data.error ? data.error : 'Payment request failed');
+                    if (data.checkoutUrl) {
+                        window.location.href = data.checkoutUrl;
+                    } else {
+                        throw new Error('No checkout URL returned by server');
+                    }
+                } catch (err) {
+                    console.error(err);
+                    alert('Unable to start promotion checkout. Configure the backend or update the API URL.');
+                }
+            };
+
+            document.getElementById('promote-cancel').onclick = () => {
+                modal.style.display = 'none';
+            };
+        }
+
+        document.addEventListener('click', (event) => {
+            const promoteBtn = event.target.closest('.promote-btn');
+            if (!promoteBtn) return;
+            const washKey = promoteBtn.getAttribute('data-wash-key');
+            const washName = promoteBtn.getAttribute('data-wash-name');
+            openPromoteModal(washKey, washName);
+        });
+
         document.addEventListener('DOMContentLoaded', () => {
-            // populate province filter from data (if not loaded via fetch yet)
             populateProvinceFilter();
 
-            // search input
             const searchInput = document.getElementById('search-input');
             let debounceTimer = null;
             searchInput.addEventListener('input', () => {
@@ -785,7 +912,6 @@ out center tags;
                 debounceTimer = setTimeout(() => { currentPage = 1; renderWashes(); }, 250);
             });
 
-            // clear search button
             document.getElementById('clear-search').addEventListener('click', () => {
                 searchInput.value = '';
                 document.getElementById('province-filter').value = 'all';
@@ -793,29 +919,23 @@ out center tags;
                 renderWashes();
             });
 
-            // province select
             document.getElementById('province-filter').addEventListener('change', () => { currentPage = 1; renderWashes(); });
 
-            // page size select
             const pageSizeSelect = document.getElementById('page-size-select');
             pageSizeSelect.addEventListener('change', () => {
-                // pageSize variable used if user selects numeric option; 'all' handled in render
                 pageSize = parseInt(pageSizeSelect.value, 10) || 100;
                 currentPage = 1;
                 renderWashes();
             });
 
-            // pager buttons
             document.getElementById('prev-page').addEventListener('click', () => { if (currentPage>1) { currentPage--; renderWashes(); } });
             document.getElementById('next-page').addEventListener('click', () => { currentPage++; renderWashes(); });
 
-            // bind live-toggle initial value
             const liveToggle = document.getElementById('live-toggle');
             if (liveToggle) {
                 liveMode = liveToggle.checked;
             }
 
-            // geolocation then initial render (small timeout to allow fetch)
             setTimeout(() => {
                 if (navigator.geolocation) {
                     navigator.geolocation.getCurrentPosition(pos => { userLat = pos.coords.latitude; userLng = pos.coords.longitude; renderWashes(); }, err => { renderWashes(); }, { enableHighAccuracy:true, timeout:8000 });
