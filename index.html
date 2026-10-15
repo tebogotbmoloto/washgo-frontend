@@ -186,6 +186,9 @@
             </div>
         </div>
 
+        <!-- status about data source -->
+        <div id="data-status" class="small-muted" style="margin-bottom:10px;">Loading car wash data…</div>
+
         <!-- Interactive Map View -->
         <div id="map"></div>
 
@@ -224,17 +227,25 @@
         let carWashes = SAMPLE_CARWASHES.slice();
 
         (function loadExternalData(){
-            fetch('./carwashes.json').then(r => {
-                if (!r.ok) throw new Error('no external file');
+            const statusEl = document.getElementById('data-status');
+            // cache-bust to avoid stale cached responses during testing
+            const url = 'carwashes.json?cacheBust=' + Date.now();
+            fetch(url).then(r => {
+                if (!r.ok) throw new Error('HTTP ' + r.status);
                 return r.json();
             }).then(json => {
                 if (Array.isArray(json) && json.length > 0) {
                     carWashes = json;
                     console.info('Loaded', json.length, 'car washes from carwashes.json');
+                    if (statusEl) statusEl.innerText = 'Loaded ' + json.length + ' car washes from carwashes.json';
                     populateProvinceFilter();
                     renderWashes();
+                } else {
+                    throw new Error('no entries in carwashes.json');
                 }
-            }).catch(_ => {
+            }).catch(err => {
+                console.warn('Could not load carwashes.json — using embedded sample. Error:', err);
+                if (statusEl) statusEl.innerText = 'Using embedded sample data (' + carWashes.length + ' items). Failed to load carwashes.json: ' + err.message;
                 populateProvinceFilter();
                 renderWashes();
             });
@@ -286,7 +297,6 @@
         function populateProvinceFilter() {
             const sel = document.getElementById('province-filter');
             const provinces = Array.from(new Set(carWashes.map(c => c.province || 'Unknown'))).sort();
-            // clear existing except 'all'
             sel.innerHTML = '<option value="all">All</option>' + provinces.map(p => '<option value="'+encodeURIComponent(p)+'">'+p+'</option>').join('');
         }
 
@@ -294,7 +304,6 @@
         function requestLocationAndRender() {
             const listEl = document.getElementById('wash-list');
             if (navigator.geolocation) {
-                // show temporary message while waiting
                 if (listEl) listEl.innerHTML = '<p style="text-align:center;">📍 Getting your current location…</p>';
                 navigator.geolocation.getCurrentPosition(pos => {
                     userLat = pos.coords.latitude;
@@ -302,11 +311,9 @@
                     renderWashes();
                 }, err => {
                     console.warn('Geolocation error:', err);
-                    // fallback to last known or default location
                     renderWashes();
                 }, { enableHighAccuracy:true, timeout:8000 });
             } else {
-                // no geolocation support
                 renderWashes();
             }
         }
@@ -314,6 +321,7 @@
         function renderWashes() {
             const listEl = document.getElementById('wash-list');
             const pager = document.getElementById('pagination-controls');
+            const statusEl = document.getElementById('data-status');
             if (!listEl) return;
 
             // compute processed list (distance/status)
@@ -321,17 +329,16 @@
 
             // apply filter mode
             if (currentFilter === 'nearby') {
-                // IMPORTANT: nearby uses geolocation (userLat/userLng) and lists all washes within NEARBY_RADIUS_KM regardless of open/closed
                 processedFull = processedFull.filter(w => w.distance <= NEARBY_RADIUS_KM);
                 processedFull.sort((a,b) => a.distance - b.distance);
             } else if (currentFilter === 'cheapest') {
                 processedFull = processedFull.filter(w => w.distance <= NEARBY_RADIUS_KM);
                 processedFull.sort((a,b) => a.price - b.price || a.distance - b.distance);
             } else if (currentFilter === 'open') {
-                // Show nearby washes, but place open ones first (do NOT hide closed washes)
                 processedFull = processedFull.filter(w => w.distance <= NEARBY_RADIUS_KM);
                 processedFull.sort((a,b) => (a.status.isOpen === b.status.isOpen) ? a.distance - b.distance : (a.status.isOpen ? -1 : 1));
             } else if (currentFilter === 'gonow') {
+                // show all carwashes across SA
                 processedFull.sort((a,b) => {
                     if ((a.province||'') === (b.province||'')) return (a.name||'').localeCompare(b.name||'');
                     return (a.province||'').localeCompare(b.province||'');
@@ -359,6 +366,8 @@
             const startIdx = (currentPage - 1) * pageSize;
             const endIdx = startIdx + pageSize;
             const displayed = processedFull.slice(startIdx, endIdx);
+
+            if (statusEl) statusEl.innerText = (carWashes.length || 0) + ' total car washes available — showing ' + displayed.length + (currentFilter === 'nearby' ? (' within ' + NEARBY_RADIUS_KM + ' km') : '') + '.';
 
             // show results grouped by province (only on displayed set)
             if (displayed.length === 0) {
